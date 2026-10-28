@@ -1,0 +1,11 @@
+{
+  "display_name": "Context Helper",
+  "loading_order": 120,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "Frankorz",
+  "version": "0.1.0",
+  "minimum_client_version": "1.13.0"
+}
