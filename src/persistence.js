@@ -153,6 +153,7 @@ export async function applyPlan(context, snapshot, plan, storage) {
     if (!plan.messages.length && !plan.variables.length && !plan.tables.length) return null;
     await assertServerCurrent(context, storage);
     assertCurrent(context, snapshot);
+    storage.assertWritable?.();
     const ids = [...new Set([...plan.messages, ...plan.variables].map(change => change.id).concat(
         plan.tables.map(change => snapshot.tables.find(table => table.uid === change.uid)?.pieceIndex)))];
     for (const change of [...plan.messages, ...plan.variables]) {
@@ -206,6 +207,7 @@ export async function undoRepair(context, storage) {
     if (fingerprint(context) !== currentFingerprint || selectedFields(context, backup) !== backup.expected) {
         throw new Error('Conversation changed while checking the server. Undo was not written.');
     }
+    storage.assertWritable?.();
     for (const { id, row } of backup.rows) {
         const current = context.chat[id];
         for (const key of ['mes', 'swipes', 'variables', 'variables_initialized', 'tableEditMatches']) {

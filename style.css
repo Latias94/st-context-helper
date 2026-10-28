@@ -914,6 +914,308 @@
     margin-top: 6px;
 }
 
+.context-helper .ch-automation-strip {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 11px;
+    margin: 0 0 16px;
+    padding: 12px 14px;
+    border: 1px solid var(--ch-line);
+    border-inline-start: 3px solid var(--ch-accent);
+    border-radius: 8px;
+    background: var(--ch-surface);
+}
+
+.context-helper .ch-automation-strip.is-on {
+    border-inline-start-color: var(--ch-success);
+    background: color-mix(in srgb, var(--ch-success) 7%, transparent);
+}
+
+.context-helper .ch-automation-strip.is-paused {
+    border-inline-start-color: var(--ch-warning);
+    background: color-mix(in srgb, var(--ch-warning) 7%, transparent);
+}
+
+.context-helper .ch-automation-strip.is-off {
+    border-inline-start-color: var(--ch-muted);
+}
+
+.context-helper .ch-automation-mark {
+    display: grid;
+    place-items: center;
+    width: 31px;
+    height: 31px;
+    border: 1px solid var(--ch-line);
+    border-radius: 8px;
+    color: var(--ch-accent);
+}
+
+.context-helper .ch-automation-copy {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    gap: 2px;
+}
+
+.context-helper .ch-automation-copy strong {
+    font-size: .82em;
+}
+
+.context-helper .ch-automation-copy span,
+.context-helper .ch-automation-modes {
+    color: var(--ch-muted);
+    font-size: .7em;
+}
+
+.context-helper .ch-automation-modes {
+    display: flex;
+    grid-column: 2 / -1;
+    flex-wrap: wrap;
+    justify-content: start;
+    gap: 5px 9px;
+}
+
+.context-helper .ch-automation-modes span {
+    white-space: nowrap;
+}
+
+.context-helper .ch-automation-modes [data-field="automation-last"] {
+    white-space: normal;
+}
+
+.context-helper .ch-automation-strip > .ch-text-button {
+    grid-column: 3;
+    grid-row: 1;
+    white-space: nowrap;
+}
+
+.context-helper .ch-diagnosis-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin: 15px 0;
+}
+
+.context-helper .ch-diagnosis-count {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: 7px;
+    padding: 10px 12px;
+    border: 1px solid var(--ch-line);
+    border-radius: 7px;
+    background: var(--ch-surface);
+}
+
+.context-helper .ch-diagnosis-count strong {
+    grid-row: span 2;
+    align-self: center;
+    color: var(--ch-accent);
+    font-size: 1.25em;
+    font-variant-numeric: tabular-nums;
+}
+
+.context-helper .ch-diagnosis-count span {
+    font-size: .78em;
+    font-weight: 600;
+}
+
+.context-helper .ch-diagnosis-count small {
+    color: var(--ch-muted);
+    font-size: .65em;
+    line-height: 1.4;
+}
+
+.context-helper .ch-count-repair {
+    border-inline-start: 2px solid var(--ch-error);
+}
+
+.context-helper .ch-count-policy {
+    border-inline-start: 2px solid var(--ch-warning);
+}
+
+.context-helper .ch-count-review {
+    border-inline-start: 2px solid var(--ch-accent);
+}
+
+.context-helper .ch-diagnosis-clear {
+    grid-column: 1 / -1;
+}
+
+.context-helper .ch-issue-category {
+    padding: 1px 5px;
+    border: 1px solid var(--ch-line);
+    border-radius: 4px;
+    color: var(--ch-muted);
+    font-size: .72em;
+}
+
+.context-helper .ch-issue-category-repair .ch-issue-category {
+    color: var(--ch-error);
+    border-color: color-mix(in srgb, var(--ch-error) 40%, var(--ch-line));
+}
+
+.context-helper .ch-issue-category-policy .ch-issue-category {
+    color: var(--ch-warning);
+    border-color: color-mix(in srgb, var(--ch-warning) 40%, var(--ch-line));
+}
+
+.context-helper .ch-recommendation {
+    margin-top: 7px;
+    color: var(--ch-accent);
+    font-size: .78em;
+}
+
+.context-helper .ch-issue-raw {
+    margin-top: 9px;
+    border-top: 1px solid var(--ch-line);
+}
+
+.context-helper .ch-issue-raw > summary {
+    padding: 8px 0 0;
+    color: var(--ch-muted);
+    font-size: .7em;
+}
+
+.context-helper .ch-issue-raw .ch-fulltext {
+    max-height: 220px;
+    margin: 8px 0 0;
+    font-size: .7em;
+}
+
+.context-helper .ch-settings-automation {
+    margin-top: 15px;
+    padding: 13px 14px;
+    border: 1px solid var(--ch-line);
+    border-radius: 8px;
+    background: var(--ch-surface);
+}
+
+.context-helper .ch-settings-automation .ch-incoming {
+    margin: 0;
+    padding: 0;
+}
+
+.context-helper .ch-settings-automation .ch-help {
+    margin: 10px 0 0 25px;
+}
+
+.context-helper .ch-regex-heading {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 22px;
+}
+
+.context-helper .ch-regex-filters {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(150px, .35fr);
+    gap: 10px;
+    margin-top: 13px;
+}
+
+.context-helper .ch-regex-search {
+    min-width: 0;
+}
+
+.context-helper .ch-regex-list {
+    display: grid;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.context-helper .ch-regex-rule {
+    min-width: 0;
+    border: 1px solid var(--ch-line);
+    border-radius: 8px;
+    background: var(--ch-surface);
+}
+
+.context-helper .ch-regex-rule > summary {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+    padding: 11px 12px;
+    cursor: pointer;
+    list-style-position: inside;
+}
+
+.context-helper .ch-regex-main {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    gap: 2px;
+}
+
+.context-helper .ch-regex-main strong {
+    overflow: hidden;
+    font-size: .82em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.context-helper .ch-regex-activity {
+    flex: 0 1 auto;
+    max-width: 42%;
+    padding: 2px 6px;
+    border: 1px solid var(--ch-line);
+    border-radius: 5px;
+    font-size: .65em;
+}
+
+.context-helper .ch-regex-active {
+    color: var(--ch-success);
+    border-color: color-mix(in srgb, var(--ch-success) 45%, var(--ch-line));
+}
+
+.context-helper .ch-regex-inactive {
+    color: var(--ch-muted);
+}
+
+.context-helper .ch-regex-conditional {
+    color: var(--ch-warning);
+    border-color: color-mix(in srgb, var(--ch-warning) 45%, var(--ch-line));
+}
+
+.context-helper .ch-regex-toggle {
+    flex: 0 0 auto;
+    accent-color: var(--ch-accent);
+}
+
+.context-helper .ch-regex-body {
+    margin: 0 12px 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--ch-line);
+}
+
+.context-helper .ch-regex-body > .ch-disclosure {
+    margin-top: 9px;
+}
+
+.context-helper .ch-regex-code {
+    margin: 0 13px 7px;
+    padding: 8px;
+    border: 1px solid var(--ch-line);
+    border-radius: 5px;
+    background: var(--ch-bg);
+    color: var(--ch-text);
+    font: .72em/1.6 ui-monospace, Consolas, monospace;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.context-helper .ch-regex-policy {
+    margin-top: 9px;
+    padding: 8px 10px;
+    border-inline-start: 2px solid var(--ch-warning);
+    background: color-mix(in srgb, var(--ch-warning) 6%, transparent);
+    color: var(--ch-muted);
+    font-size: .72em;
+}
+
 @media (hover: hover) and (pointer: fine) {
     .context-helper .menu_button:not(:disabled):hover,
     .context-helper .ch-message:hover {
@@ -938,6 +1240,20 @@
 
     .context-helper .ch-fields {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .context-helper .ch-automation-strip {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+    }
+
+    .context-helper .ch-automation-modes {
+        grid-column: 2 / -1;
+        justify-content: start;
+    }
+
+    .context-helper .ch-automation-strip > .ch-text-button {
+        grid-column: 3;
+        grid-row: 1;
     }
 
     .context-helper .ch-fields > label:last-child {
@@ -968,6 +1284,25 @@
 
     .context-helper .ch-stats {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .context-helper .ch-automation-strip {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .context-helper .ch-automation-strip > .ch-text-button {
+        grid-column: 2;
+        grid-row: auto;
+        justify-self: start;
+    }
+
+    .context-helper .ch-automation-modes {
+        grid-column: 1 / -1;
+    }
+
+    .context-helper .ch-diagnosis-summary,
+    .context-helper .ch-regex-filters {
+        grid-template-columns: minmax(0, 1fr);
     }
 
     .context-helper .ch-stats > div {

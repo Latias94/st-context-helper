@@ -1,9 +1,13 @@
+import { diagnosisSummary, presentIssue } from './diagnostics.js';
+import { regexDepthLabel, regexSourceName } from './regex.js';
+
 let viewSequence = 0;
 
 const asArray = value => Array.isArray(value) ? value : [];
 const number = value => Number.isFinite(value) ? value.toLocaleString() : '—';
 const severityNames = { error: '错误', warning: '警告', info: '提示' };
 const confidenceNames = { declared: '明确声明', observed: '历史观察', conditional: '条件适用', template: '生成模板' };
+const categoryNames = { repair: '可修复', policy: '规则策略', review: '需要核对' };
 
 function text(value) {
     if (value === undefined || value === null) return '（空）';
@@ -61,6 +65,12 @@ export function createContextHelperView(config = {}) {
             <button type="button" class="menu_button ch-primary" data-action="inspect"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> 分析上下文</button>
             <p class="ch-help ch-scope-note" data-field="scope">消息编号从 0 开始；留空表示全部范围。</p>
         </div>
+        <section class="ch-automation-strip" data-field="automation-strip" role="status" aria-live="polite">
+            <div class="ch-automation-mark" aria-hidden="true"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+            <div class="ch-automation-copy"><strong data-field="automation-state">自动化状态：等待分析</strong><span data-field="automation-detail">分析后显示当前聊天的自动规范化是否生效。</span></div>
+            <div class="ch-automation-modes"><span data-field="automation-scope">范围：当前聊天</span><span data-field="automation-history">历史：手动预览</span><span data-field="automation-ai">AI：手动</span><span data-field="automation-last"></span></div>
+            <button type="button" class="ch-text-button" data-action="go-settings">查看设置 →</button>
+        </section>
         <div class="ch-stats" aria-label="所选聊天范围统计">
             <div><span>原始消息字符</span><strong data-field="raw">—</strong></div>
             <div><span>正则模拟字符</span><strong data-field="projected">—</strong></div>
@@ -71,6 +81,7 @@ export function createContextHelperView(config = {}) {
             <button type="button" role="tab" data-tab="inspector" aria-selected="true"><span>01</span> 上下文检查</button>
             <button type="button" role="tab" data-tab="diagnosis" aria-selected="false" tabindex="-1"><span>02</span> 诊断 <small data-field="issue-count">0</small></button>
             <button type="button" role="tab" data-tab="repair" aria-selected="false" tabindex="-1"><span>03</span> 修复预览</button>
+            <button type="button" role="tab" data-tab="settings" aria-selected="false" tabindex="-1"><span>04</span> 设置</button>
         </div>
         <section class="ch-panel" data-panel="inspector" role="tabpanel">
             <div class="ch-provenance" data-field="provenance"><strong>先查看，再处理</strong><p>分析当前聊天，查看提示词事件快照或本地正则模拟。两种结果会分别标注。</p></div>
@@ -106,6 +117,7 @@ export function createContextHelperView(config = {}) {
         </section>
         <section class="ch-panel" data-panel="diagnosis" role="tabpanel" hidden>
             <div class="ch-section-heading"><div><h3>定位异常，保留证据</h3><p class="ch-help">按严重程度查看标签、正文、变量与表格问题。</p></div><span class="ch-badge" data-field="profile">尚未识别预设</span></div>
+            <div class="ch-diagnosis-summary" data-field="diagnosis-summary"></div>
             <details class="ch-disclosure" data-field="protocol-diagnosis" open hidden>
                 <summary>角色卡协议证据 <small>对照缺失标签的诊断</small></summary>
                 <div class="ch-protocol" data-field="protocol-diagnosis-content"></div>
@@ -142,8 +154,21 @@ export function createContextHelperView(config = {}) {
                 <summary>修复提示词 <small>可查看与编辑</small></summary>
                 <textarea class="text_pole ch-prompt" name="prompt" rows="8" spellcheck="false" aria-label="修复提示词" data-lock></textarea>
             </details>
-            <label class="ch-incoming"><input type="checkbox" name="normalizeIncoming" data-lock><span>在 MVU 解析前规范新助手消息的标签边界<small>仅当前聊天；默认关闭。此开关不应用上方的修复预览。</small></span></label>
             <div class="ch-plan" data-field="plan"><div class="ch-empty">先生成修复预览，再逐项核对原文与修改内容。</div></div>
+        </section>
+        <section class="ch-panel" data-panel="settings" role="tabpanel" hidden>
+            <div class="ch-section-heading"><div><h3>自动化与规则设置</h3><p class="ch-help">这里的开关影响当前聊天的新消息处理；历史消息仍由手动预览与修复控制。</p></div><span class="ch-badge" data-field="settings-status">等待分析</span></div>
+            <div class="ch-settings-automation">
+                <label class="ch-incoming"><input type="checkbox" name="normalizeIncoming" data-lock><span><strong>规范新助手消息的标签边界</strong><small>范围：当前聊天。仅对之后收到的新助手消息生效；不会回写历史消息，也不会自动应用修复预览。</small></span></label>
+                <p class="ch-help">通用适配器下自动规范化会暂停；请在上方选择可识别的适配器后再分析。切换后会保存并重新分析；保存失败会显示实际状态和原因。</p>
+            </div>
+            <div class="ch-regex-heading"><div><h3>正则规则清单</h3><p class="ch-help">列出全局、预设和角色卡规则，包括关闭、未获允许及当前不作用于提示词的规则。</p></div><span class="ch-badge" data-field="regex-status">尚未读取</span></div>
+            <div class="ch-regex-filters">
+                <label class="ch-regex-search">搜索规则<input class="text_pole" type="search" data-regex-search placeholder="名称、来源、查找或替换文本" autocomplete="off"></label>
+                <label>来源<select class="text_pole" data-regex-source><option value="all">全部来源</option></select></label>
+            </div>
+            <p class="ch-help" data-field="regex-scope-help">规则作用范围会影响实际聊天：全局规则影响所有聊天，预设规则随预设，角色卡规则随当前角色卡。0 深度表示最新楼层；开关只更改配置，实际生效状态以分析结果为准。</p>
+            <div class="ch-regex-list" data-field="regex-rules"><div class="ch-empty">分析后显示正则规则。</div></div>
         </section>
         <div class="ch-status" role="status" aria-live="polite" aria-atomic="true" data-field="status" hidden></div>
         <footer class="ch-footer">
@@ -175,8 +200,11 @@ export function createContextHelperView(config = {}) {
     let modelRevision = 0;
     let optionRevision = 0;
     let optionSaving = false;
+    let regexSaving = false;
     let savedOptions = { ...options };
     let disposed = false;
+    let regexSearch = '';
+    let regexSource = 'all';
 
     for (const name of ['start', 'end', 'adapter', 'connectionId', 'model', 'maxTokens', 'prompt']) {
         const value = options[name];
@@ -231,10 +259,10 @@ export function createContextHelperView(config = {}) {
     }
 
     function updateAvailability() {
-        const busy = disposed || externalBusy || pendingAction !== null || modelRequest !== null || optionSaving;
+        const busy = disposed || externalBusy || pendingAction !== null || modelRequest !== null || optionSaving || regexSaving;
         element.setAttribute('aria-busy', String(!disposed && busy));
         element.setAttribute('aria-disabled', String(disposed));
-        element.querySelectorAll('[data-lock]').forEach(item => { item.disabled = busy; });
+        element.querySelectorAll('[data-lock]').forEach(item => { item.disabled = busy || item.dataset.unavailable === 'true'; });
         const hasAnalysis = Boolean(analysis);
         action('inspect').disabled = busy || typeof config.onInspect !== 'function';
         action('normalize').disabled = busy || !hasAnalysis || typeof config.onNormalize !== 'function';
@@ -247,6 +275,9 @@ export function createContextHelperView(config = {}) {
         action('export').disabled = busy || !analysis || typeof config.onExport !== 'function';
         action('cancel').hidden = disposed || (!modelRequest
             && (typeof config.onCancel !== 'function' || (!externalBusy && pendingAction === null)));
+        element.querySelectorAll('[data-issue-action="local"]').forEach(button => {
+            button.disabled = busy || !analysis || typeof config.onNormalize !== 'function';
+        });
     }
 
     function setBusy(busy) {
@@ -400,8 +431,11 @@ export function createContextHelperView(config = {}) {
         if (!asArray(message.trace).length) trace.append(node('p', 'ch-help', '未记录到改变内容的规则；这不表示没有规则执行。'));
         asArray(message.trace).forEach(step => {
             const row = node('div', 'ch-trace-row');
-            row.append(node('strong', '', step.name || '未命名规则'), node('small', 'ch-help', `来源：${step.source && step.source !== 'unknown' ? text(step.source) : '未标注'}`),
-                node('span', '', `${number(step.before)} → ${number(step.after)} 字符 · 移除 ${number(step.removed)}`));
+            const policy = step.policy === 'trim' ? '深度裁剪' : step.policy === 'summary' ? '摘要策略' : '';
+            const status = step.narrativeLost ? '正文可能丢失' : policy || '内容有变化';
+            row.append(node('strong', '', step.name || step.ruleKey || '未命名规则'),
+                node('small', 'ch-help', `来源：${step.source && step.source !== 'unknown' ? text(step.source) : '未标注'} · ${step.ruleKey ? `规则键：${text(step.ruleKey)} · ` : ''}深度 ${step.depth ?? '未标注'}（范围 ${step.minDepth ?? '未设'}–${step.maxDepth ?? '未设'}）`),
+                node('span', '', `${number(step.before)} → ${number(step.after)} 字符 · 移除 ${number(step.removed)} · ${status}`));
             trace.append(row);
         });
         detail.append(trace);
@@ -417,38 +451,93 @@ export function createContextHelperView(config = {}) {
         }
     }
 
-    function renderIssues(container, issues, navigable = true) {
+    function issuePresentation(issue) {
+        try {
+            const result = presentIssue(issue);
+            return { ...result, severity: result.category === 'policy' ? 'info' : result.severity || 'info' };
+        } catch (error) {
+            return { ...issue, title: '需要核对的诊断', detail: text(issue.detail || issue.title || issue.code),
+                recommendation: '展开原始诊断数据，确认来源和处理范围。', action: 'none', category: 'review', sourceError: error.message };
+        }
+    }
+
+    function issueActionButton(item, presentation) {
+        const actionType = presentation.action || 'none';
+        if (!['regex', 'local', 'ai', 'settings'].includes(actionType)) return;
+        const button = node('button', 'ch-text-button');
+        button.type = 'button';
+        button.dataset.issueAction = actionType;
+        if (actionType === 'regex') {
+            button.textContent = '查看对应规则 →';
+            button.addEventListener('click', () => {
+                if (presentation.ruleKey) showRegexRule(presentation.ruleKey);
+                else selectTab('settings', true);
+            });
+        } else if (actionType === 'local') {
+            button.textContent = '生成本地修复预览 →';
+            button.disabled = !analysis || typeof config.onNormalize !== 'function';
+            button.addEventListener('click', () => { void runAction('normalize', config.onNormalize); });
+        } else if (actionType === 'ai') {
+            button.textContent = '前往 AI 修复预览 →';
+            button.disabled = !analysis || typeof config.onAiRepair !== 'function';
+            button.addEventListener('click', () => {
+                selectTab('repair', true);
+                if (!button.disabled) action('ai').focus();
+            });
+        } else {
+            button.textContent = '前往设置 →';
+            button.addEventListener('click', () => {
+                if (presentation.ruleKey) showRegexRule(presentation.ruleKey);
+                else selectTab('settings', true);
+            });
+        }
+        item.append(button);
+    }
+
+    function renderIssues(container, issues, navigable = true, actions = false) {
         container.replaceChildren();
         if (!issues.length) {
-            container.append(node('div', 'ch-empty', analysis ? '当前筛选下没有报告问题；仍可查看消息与解析事实。' : '分析后显示诊断结果。'));
+            container.append(node('div', 'ch-empty', analysis ? '当前筛选下没有需要处理的问题；仍可查看消息与解析事实。' : '分析后显示诊断结果。'));
             return;
         }
         const order = { error: 0, warning: 1, info: 2 };
-        [...issues].sort((a, b) => (order[a.severity] ?? 2) - (order[b.severity] ?? 2)).forEach(issue => {
-            const severity = severityNames[issue.severity] ? issue.severity : 'info';
-            const item = node('article', `ch-issue ch-severity-${severity}`);
-            const heading = node('div', 'ch-issue-heading');
-            heading.append(node('span', 'ch-severity', severityNames[severity]), node('strong', '', issue.title || issue.code || '诊断信息'));
-            item.append(heading, node('p', '', text(issue.detail)));
-            const metadata = [issue.code, issue.rule ? `规则：${text(issue.rule)}` : '', issue.source ? `来源：${text(issue.source)}` : ''].filter(Boolean);
-            if (metadata.length) item.append(node('small', 'ch-help', metadata.join(' · ')));
-            if (issue.messageId != null) {
-                const index = asArray(analysis?.messages).findIndex(message => String(message.id) === String(issue.messageId));
-                if (navigable && index >= 0) {
-                    const link = node('button', 'ch-text-button', `查看消息 #${issue.messageId} →`);
-                    link.type = 'button';
-                    link.addEventListener('click', () => {
-                        source = 'history';
-                        selectedIndex = index;
-                        renderMessages();
-                        selectTab('inspector', true);
-                        field('message-detail').scrollIntoView({ block: 'nearest' });
-                    });
-                    item.append(link);
-                } else item.append(node('small', 'ch-help', `消息 #${issue.messageId}`));
-            }
-            container.append(item);
-        });
+        [...issues].map(issue => ({ issue, presentation: issuePresentation(issue) }))
+            .sort((a, b) => (order[a.presentation.severity ?? a.issue.severity] ?? 2) - (order[b.presentation.severity ?? b.issue.severity] ?? 2))
+            .forEach(({ issue, presentation }) => {
+                const category = presentation.category;
+                const categoryClass = categoryNames[category] ? category : 'review';
+                const severity = category === 'policy' ? 'info' : severityNames[presentation.severity] ? presentation.severity : 'info';
+                const item = node('article', `ch-issue ch-severity-${severity} ch-issue-category-${categoryClass}`);
+                const heading = node('div', 'ch-issue-heading');
+                heading.append(node('span', 'ch-severity', severityNames[severity]), node('span', 'ch-issue-category', categoryNames[categoryClass]),
+                    node('strong', '', presentation.title || '需要核对的诊断'));
+                item.append(heading, node('p', '', text(presentation.detail || '请展开原始诊断数据确认。')));
+                if (presentation.recommendation) item.append(node('p', 'ch-recommendation', text(presentation.recommendation)));
+                const metadata = [presentation.code || issue.code,
+                    presentation.rule ? `规则：${text(presentation.rule)}` : presentation.ruleKey ? `规则：${text(presentation.ruleKey)}` : '',
+                    presentation.source ? `来源：${text(presentation.source)}` : ''].filter(Boolean);
+                if (metadata.length) item.append(node('small', 'ch-help', metadata.join(' · ')));
+                if (issue.messageId != null) {
+                    const index = asArray(analysis?.messages).findIndex(message => String(message.id) === String(issue.messageId));
+                    if (navigable && index >= 0) {
+                        const link = node('button', 'ch-text-button', `查看消息 #${issue.messageId} →`);
+                        link.type = 'button';
+                        link.addEventListener('click', () => {
+                            source = 'history';
+                            selectedIndex = index;
+                            renderMessages();
+                            selectTab('inspector', true);
+                            field('message-detail').scrollIntoView({ block: 'nearest' });
+                        });
+                        item.append(link);
+                    } else item.append(node('small', 'ch-help', `消息 #${issue.messageId}`));
+                }
+                if (actions) issueActionButton(item, presentation);
+                const rawDetails = node('details', 'ch-issue-raw');
+                rawDetails.append(node('summary', '', '展开原始诊断数据'), node('pre', 'ch-fulltext', excerpt(issue, 3600)));
+                item.append(rawDetails);
+                container.append(item);
+            });
     }
 
     function renderSources() {
@@ -577,18 +666,256 @@ export function createContextHelperView(config = {}) {
         }
     }
 
+    function ruleSource(rule) {
+        return regexSourceName(rule.source || rule.scriptType);
+    }
+
+    function ruleKey(rule) {
+        return String(rule.key ?? rule.id ?? rule.name ?? '');
+    }
+
+    function ruleEnabled(rule) {
+        return rule.enabled !== false && rule.disabled !== true;
+    }
+
+    function ruleFloors(rule) {
+        const key = ruleKey(rule);
+        const floors = asArray(analysis?.messages).flatMap(message => asArray(message.trace)
+            .filter(step => String(step.ruleKey ?? '') === key).map(() => message.id));
+        return number(new Set(floors).size);
+    }
+
+    function ruleActivity(rule, regex) {
+        if (regex?.enabled === false) return { label: '正则总开关关闭 · 当前不生效', className: 'inactive' };
+        if (rule.disabled === true || rule.enabled === false) return { label: '规则已关闭 · 当前不生效', className: 'inactive' };
+        if (rule.allowed === false) return { label: '未获允许 · 当前不生效', className: 'inactive' };
+        if (!rule.promptOnly) return { label: '显示 / 其他位置规则 · 不处理提示词', className: 'inactive' };
+        if (rule.activeForPrompt === false) return { label: rule.status || '提示词未激活 · 当前不生效', className: 'inactive' };
+        if (rule.activeForPrompt === true) return { label: rule.status || '当前提示词有效', className: 'active' };
+        return { label: rule.status || '已配置 · 实际作用需结合宿主策略', className: 'conditional' };
+    }
+
+    function ruleMatches(rule) {
+        const query = regexSearch.trim().toLocaleLowerCase();
+        if (regexSource !== 'all' && ruleSource(rule) !== regexSource && rule.source !== regexSource && rule.scriptType !== regexSource) return false;
+        if (!query) return true;
+        return [rule.key, rule.id, rule.name, rule.source, rule.scriptType, rule.findRegex, rule.replaceString, rule.placement]
+            .some(value => String(value ?? '').toLocaleLowerCase().includes(query));
+    }
+
+    async function toggleRegexRule(rule, checkbox) {
+        if (disposed || regexSaving || externalBusy || optionSaving || pendingAction || modelRequest || typeof config.onRegexToggle !== 'function') return;
+        const previous = ruleEnabled(rule);
+        const enabled = checkbox.checked;
+        if (enabled === previous) return;
+        checkbox.checked = previous;
+        regexSaving = true;
+        checkbox.disabled = true;
+        updateAvailability();
+        setStatus('正在保存规则设置并重新分析；以新的分析结果为准…');
+        try {
+            const result = await config.onRegexToggle(rule, enabled);
+            if (disposed) return;
+            if (result?.analysis) showAnalysis(result.analysis);
+            const current = asArray(analysis?.regex?.rules).find(item => ruleKey(item) === ruleKey(rule));
+            checkbox.checked = current ? ruleEnabled(current) : previous;
+        } catch (error) {
+            if (!disposed) {
+                if (error.analysis) showAnalysis(error.analysis);
+                const current = asArray(analysis?.regex?.rules).find(item => ruleKey(item) === ruleKey(rule));
+                checkbox.checked = current ? ruleEnabled(current) : previous;
+                if (error.analysis) reportError(error);
+                else setStatus(`${error?.message || String(error)}\n未能刷新实际规则状态，请重新分析后核对。`, true);
+            }
+        } finally {
+            if (!disposed) {
+                regexSaving = false;
+                updateAvailability();
+            }
+        }
+    }
+
+    function showRegexRule(key) {
+        if (disposed) return;
+        selectTab('settings', true);
+        const target = asArray(analysis?.regex?.rules).find(rule => ruleKey(rule) === key);
+        regexSearch = target?.name ?? String(key ?? '');
+        regexSource = target ? ruleSource(target) : 'all';
+        const search = element.querySelector('[data-regex-search]');
+        const sourceSelect = element.querySelector('[data-regex-source]');
+        search.value = regexSearch;
+        sourceSelect.value = regexSource;
+        renderRegexRules();
+        const match = [...field('regex-rules').querySelectorAll('[data-rule-key]')]
+            .find(item => item.dataset.ruleKey === key);
+        if (match) {
+            match.open = true;
+            match.scrollIntoView({ block: 'nearest' });
+        }
+    }
+
+    function renderRegexRules() {
+        const container = field('regex-rules');
+        const regex = analysis?.regex;
+        container.replaceChildren();
+        const rules = asArray(regex?.rules);
+        field('regex-status').textContent = !analysis ? '尚未读取' : regex ? `${number(rules.length)} 条规则 · ${regex.enabled === false ? '总开关关闭' : '总开关开启'}` : '未提供规则清单';
+        field('regex-scope-help').textContent = regex
+            ? `规则作用范围：全局规则影响所有聊天，预设规则随预设，角色卡规则随当前角色卡。0 深度表示最新楼层；“修改楼层”只统计所选范围内实际改变内容的轨迹。开关更改的是配置，不代表当前实际生效。${regex.enabled === false ? '当前正则总开关关闭，单条规则切换不会让它立即参与提示词。' : ''}`
+            : '规则作用范围会影响实际聊天：全局规则影响所有聊天，预设规则随预设，角色卡规则随当前角色卡。0 深度表示最新楼层。';
+        const sourceSelect = element.querySelector('[data-regex-source]');
+        const sources = [...new Set(rules.map(ruleSource))];
+        const selected = regexSource;
+        sourceSelect.replaceChildren(new Option('全部来源', 'all'), ...sources.map(value => new Option(value, value)));
+        sourceSelect.value = sources.includes(selected) || selected === 'all' ? selected : 'all';
+        regexSource = sourceSelect.value;
+        const visible = rules.filter(ruleMatches);
+        if (!regex) {
+            container.append(node('div', 'ch-empty', analysis ? '主线程未提供正则规则清单。' : '分析后显示正则规则。'));
+            return;
+        }
+        if (!visible.length) {
+            container.append(node('div', 'ch-empty', rules.length ? '当前搜索和来源筛选没有匹配规则。' : '本次分析没有可展示的正则规则。'));
+            return;
+        }
+        visible.forEach(rule => {
+            const key = ruleKey(rule);
+            const activity = ruleActivity(rule, regex);
+            const details = node('details', 'ch-regex-rule');
+            details.dataset.ruleKey = key;
+            const summary = node('summary', 'ch-regex-summary');
+            const main = node('span', 'ch-regex-main');
+            const title = node('strong', '', rule.name || key || '未命名规则');
+            const meta = node('small', 'ch-help', `${ruleSource(rule)} · ${rule.promptOnly ? '提示词' : '非提示词'} · ${rule.depthLabel || regexDepthLabel(rule)} · 修改楼层 ${ruleFloors(rule)}`);
+            main.append(title, meta);
+            const status = node('span', `ch-regex-activity ch-regex-${activity.className}`, activity.label);
+            const toggle = node('input', 'ch-regex-toggle');
+            toggle.type = 'checkbox';
+            toggle.checked = ruleEnabled(rule);
+            toggle.dataset.lock = '';
+            toggle.dataset.unavailable = String(typeof config.onRegexToggle !== 'function');
+            toggle.setAttribute('aria-label', `切换规则 ${rule.name || key || '未命名规则'}`);
+            toggle.addEventListener('click', event => event.stopPropagation());
+            toggle.addEventListener('change', () => { void toggleRegexRule(rule, toggle); });
+            summary.append(main, status, toggle);
+            details.append(summary);
+            const body = node('div', 'ch-regex-body');
+            const info = [
+                `规则键：${key || '未标注'}`,
+                `类型：${rule.scriptType ?? '未标注'}`,
+                `配置开关：${ruleEnabled(rule) ? '开启' : '关闭'}`,
+                `深度：${rule.depthLabel || regexDepthLabel(rule)}（0 为最新）`,
+                `位置：${asArray(rule.placement).map(position => ({ 1: '用户', 2: '助手', 5: '世界书', 6: '独立推理' })[position] || String(position)).join('、') || '未标注'}`,
+                `允许：${rule.allowed === false ? '否' : rule.allowed === true ? '是' : '未标注'}`,
+                `提示词处理：${rule.promptOnly ? '是' : '否'} · Markdown 显示处理：${rule.markdownOnly ? '是' : '否'}`,
+                `当前状态：${rule.status || activity.label}`,
+            ];
+            body.append(node('p', 'ch-help', info.join(' · ')));
+            const patterns = node('details', 'ch-disclosure');
+            patterns.append(node('summary', '', '查找与替换'));
+            const findCode = node('div', 'ch-regex-code');
+            const replaceCode = node('div', 'ch-regex-code');
+            findCode.append(node('div', '', `查找：${excerpt(rule.findRegex, 2400)}`));
+            replaceCode.append(node('div', '', `替换：${excerpt(rule.replaceString, 2400)}`));
+            patterns.append(findCode, replaceCode);
+            body.append(patterns);
+            const policy = [];
+            if (rule.trimStrings) policy.push(`trimStrings：${excerpt(rule.trimStrings, 400)}`);
+            policy.push(rule.source === 'global' ? '修改全局规则会影响所有聊天。'
+                : rule.source === 'preset' ? '修改预设规则会影响使用该预设的聊天。'
+                    : rule.source === 'character' ? '修改角色卡规则会影响使用该角色卡的聊天。' : '规则作用范围未确认，请核对来源。');
+            if (rule.allowed === false) policy.push('该规则未获允许，切换配置仍不会使它当前生效。');
+            if (rule.disabled === true || rule.enabled === false) policy.push('该规则配置为关闭。');
+            if (regex.enabled === false) policy.push('正则总开关关闭，所有规则当前都不参与提示词。');
+            if (policy.length) body.append(node('p', 'ch-regex-policy', policy.join(' ')));
+            details.append(body);
+            container.append(details);
+        });
+        updateAvailability();
+    }
+
+    function renderAutomation() {
+        const automation = analysis?.automation;
+        const state = field('automation-state');
+        const detail = field('automation-detail');
+        const strip = field('automation-strip');
+        const settingsStatus = field('settings-status');
+        const enabled = automation?.enabled === true;
+        const effective = automation?.effective === true;
+        strip.classList.toggle('is-on', effective);
+        strip.classList.toggle('is-paused', enabled && !effective);
+        strip.classList.toggle('is-off', !enabled);
+        if (!analysis || !automation) {
+            state.textContent = '新回复自动规范化：等待分析';
+            detail.textContent = '分析后显示当前聊天的新消息自动规范化是否生效。';
+            settingsStatus.textContent = '等待分析';
+        } else if (!enabled) {
+            state.textContent = '新回复自动规范化：已关闭';
+            detail.textContent = '历史消息仍可手动预览和修复；新助手消息不会自动规范化。';
+            settingsStatus.textContent = '已关闭';
+        } else if (!effective) {
+            const adapter = automation.adapter || 'generic';
+            state.textContent = '新回复自动规范化：已开启 · 当前暂停';
+            detail.textContent = adapter === 'generic' ? '通用适配器仅观察；请在上方选择匹配的标签适配器，或使用手动修复预览。' : automation.label || '当前适配器未生效，请重新分析后核对。';
+            settingsStatus.textContent = '已开启 · 当前暂停';
+        } else {
+            state.textContent = '新回复自动规范化：已开启 · 生效中';
+            detail.textContent = `标签适配：${analysis.profile?.label || automation.adapter || '已识别适配器'}；仅处理之后收到的新助手消息。`;
+            settingsStatus.textContent = '已开启 · 生效中';
+        }
+        field('automation-scope').textContent = `范围：${automation?.scope === 'chat' || !automation ? '当前聊天' : text(automation.scope)}`;
+        field('automation-history').textContent = `历史：${automation?.historyMode === 'preview' || !automation ? '手动预览' : text(automation.historyMode)}`;
+        field('automation-ai').textContent = `AI：${automation?.aiMode === 'manual' || !automation ? '手动' : text(automation.aiMode)}`;
+        const last = automation?.lastNormalization;
+        field('automation-last').textContent = last ? `最近${last.id != null ? ` #${last.id}` : ''}：${last.status || '已记录'}${last.at ? ` · ${last.at}` : ''}` : '';
+        if (optionSaving) {
+            state.textContent = '新回复自动规范化：正在保存并更新状态…';
+            settingsStatus.textContent = '正在保存并重新分析';
+        }
+    }
+
+    function renderDiagnosisSummary(issues) {
+        const container = field('diagnosis-summary');
+        container.replaceChildren();
+        if (!analysis) return;
+        let counts;
+        try {
+            counts = diagnosisSummary(issues);
+        } catch {
+            counts = { repair: 0, policy: 0, review: issues.length };
+        }
+        const items = [
+            ['repair', '可处理', '本地或 AI 可生成下一步预览'],
+            ['policy', '规则策略', '正则按深度裁剪或摘要，未必是修复失败'],
+            ['review', '需要核对', '查看来源、证据或配置状态'],
+        ];
+        items.forEach(([key, label, detail]) => {
+            const item = node('div', `ch-diagnosis-count ch-count-${key}`);
+            item.append(node('strong', '', number(counts[key] ?? 0)), node('span', '', label), node('small', '', detail));
+            container.append(item);
+        });
+        if (!issues.length) container.append(node('p', 'ch-help ch-diagnosis-clear', '当前分析没有诊断项。'));
+    }
+
     function renderDiagnosis() {
         if (disposed) return;
         const issues = asArray(analysis?.issues);
         field('issue-count').textContent = number(issues.length);
-        field('boundary-guidance').hidden = !analysis || (!issues.length && !analysis.cardProtocol?.warnings?.length);
+        renderDiagnosisSummary(issues);
+        let counts;
+        try {
+            counts = diagnosisSummary(issues);
+        } catch {
+            counts = { repair: 0, policy: 0, review: issues.length };
+        }
+        field('boundary-guidance').hidden = !analysis || counts.repair === 0;
         element.querySelectorAll('[data-filter]').forEach(button => {
             const severity = button.dataset.filter;
-            const count = severity === 'all' ? issues.length : issues.filter(issue => issue.severity === severity).length;
+            const count = severity === 'all' ? issues.length : issues.filter(issue => issuePresentation(issue).severity === severity).length;
             button.textContent = `${severity === 'all' ? '全部' : severityNames[severity]} ${count}`;
             button.setAttribute('aria-pressed', String(severity === issueFilter));
         });
-        renderIssues(field('issues'), issues.filter(issue => issueFilter === 'all' || issue.severity === issueFilter));
+        renderIssues(field('issues'), issues.filter(issue => issueFilter === 'all' || issuePresentation(issue).severity === issueFilter), true, true);
         const facts = field('facts');
         facts.replaceChildren();
         if (!analysis) return;
@@ -612,7 +939,13 @@ export function createContextHelperView(config = {}) {
     function showAnalysis(next) {
         if (disposed) return;
         analysis = next || null;
+        if (analysis?.automation?.enabled !== undefined) {
+            control('normalizeIncoming').checked = Boolean(analysis.automation.enabled);
+            savedOptions.normalizeIncoming = Boolean(analysis.automation.enabled);
+        }
         showPlan(null);
+        renderAutomation();
+        renderRegexRules();
         const captured = analysis?.prompt?.kind === 'captured';
         field('capture-kind').textContent = analysis ? captured ? '提示词事件 · 已捕获' : '正则模拟 · 非完整请求' : '等待分析';
         field('capture-kind').classList.toggle('is-captured', captured);
@@ -723,23 +1056,37 @@ export function createContextHelperView(config = {}) {
         const revision = ++optionRevision;
         optionSaving = true;
         updateAvailability();
+        renderAutomation();
         try {
             const next = getOptions();
             if (typeof config.onOptionsChange === 'function') {
                 setStatus('正在保存设置…');
-                await config.onOptionsChange({ ...next });
-                if (!disposed && revision === optionRevision) setStatus('设置已保存；修复前请重新生成预览。');
+                const result = await config.onOptionsChange({ ...next });
+                if (!disposed && revision === optionRevision) {
+                    if (result?.analysis) showAnalysis(result.analysis);
+                    setStatus('设置已保存；自动化状态以最新分析结果为准。');
+                }
             }
             if (!disposed && revision === optionRevision) savedOptions = { ...next };
         } catch (error) {
             if (!disposed && revision === optionRevision) {
-                control('adapter').value = savedOptions.adapter || 'auto';
-                control('normalizeIncoming').checked = Boolean(savedOptions.normalizeIncoming);
+                if (error.analysis) {
+                    showAnalysis(error.analysis);
+                    const actualAdapter = error.analysis.automation?.configuredAdapter;
+                    if (actualAdapter && [...control('adapter').options].some(option => option.value === actualAdapter)) {
+                        control('adapter').value = actualAdapter;
+                        savedOptions.adapter = actualAdapter;
+                    }
+                } else {
+                    control('adapter').value = savedOptions.adapter || 'auto';
+                    control('normalizeIncoming').checked = Boolean(savedOptions.normalizeIncoming);
+                }
                 reportError(error);
             }
         } finally {
             if (!disposed && revision === optionRevision) {
                 optionSaving = false;
+                renderAutomation();
                 updateAvailability();
             }
         }
@@ -753,6 +1100,7 @@ export function createContextHelperView(config = {}) {
         modelRequest?.abort();
         modelRequest = null;
         optionSaving = false;
+        regexSaving = false;
         pendingAction = null;
         externalBusy = false;
         updateAvailability();
@@ -792,6 +1140,7 @@ export function createContextHelperView(config = {}) {
         action(name).addEventListener('click', () => { void runAction(name, callback); });
     }
     action('models').addEventListener('click', () => { void refreshModels(); });
+    action('go-settings').addEventListener('click', () => selectTab('settings', true));
     action('review-ai').addEventListener('click', () => {
         selectTab('repair', true);
         if (!action('ai').disabled) action('ai').focus();
@@ -813,10 +1162,20 @@ export function createContextHelperView(config = {}) {
             reportError(error);
         }
     });
+    const regexSearchControl = element.querySelector('[data-regex-search]');
+    const regexSourceControl = element.querySelector('[data-regex-source]');
+    regexSearchControl.addEventListener('input', () => {
+        regexSearch = regexSearchControl.value;
+        renderRegexRules();
+    });
+    regexSourceControl.addEventListener('change', () => {
+        regexSource = regexSourceControl.value;
+        renderRegexRules();
+    });
     showAnalysis(null);
 
     return {
-        element, getOptions, setBusy, showAnalysis, showPlan, setStatus, setConnections, setModels, dispose,
+        element, getOptions, setBusy, showAnalysis, showPlan, showRegexRule, setStatus, setConnections, setModels, dispose,
         setBackupAvailable(available) {
             if (disposed) return;
             backupAvailable = Boolean(available);

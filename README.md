@@ -6,6 +6,41 @@ conversations. The first preset adapters cover **Izumi** and **Cat God / Meowssi
 
 Open **Extensions → 上下文助手** after installation.
 
+## Settings and next steps
+
+The status strip stays visible across all four tabs. It shows whether automatic
+normalization is enabled **for the current chat**, whether the selected adapter
+can apply it, and the latest recorded normalized message. History repairs always
+require a preview and an explicit apply. AI requests are always manual.
+
+Open **Settings** to change future-message normalization and inspect the complete
+regex inventory. The list includes global, preset, and character rules, including
+disabled rules, unapproved sources, and display-only rules. Each entry shows its
+scope, configured switch, actual prompt eligibility, depth range, affected-floor
+count, and expandable pattern/replacement. Depth zero is the newest included
+message. A rule's switch does not grant permission to an entire preset or card.
+
+Switching a regex updates its existing native owner; a global rule affects other
+chats too. It is a separate settings action, not a chat-repair preview. The helper
+checks that the owner and rule have not changed, saves through native APIs,
+verifies the stored switch, refreshes diagnosis, and invalidates pending previews.
+Pattern and depth editing remain in SillyTavern's native regex editor.
+
+Diagnosis separates repair candidates, verified history-processing policies, and
+items requiring review. Each item explains the next step and can link directly to
+its rule. For example, an enabled `上下文限制[10]` with a full-content erase pattern,
+an empty replacement, and `minDepth: 10` intentionally empties messages at depth
+10 or greater. This is reported as an informational history policy, rather than
+a failed tag repair. Keep it if the limit is desired; disable or adjust it if you
+need older story text in the request. Applying a chat repair does not change that
+regex policy. A reassuring rule name alone never exempts accidental story loss.
+
+The two reference presets' known summary-retention patterns are recognized only
+when real source summary content survives. Small, explicit literal-word filters
+are traced separately from scene loss; significant truncation and malformed
+source tags remain visible. After applying a repair, the status explains whether
+remaining items are policies, configuration checks, or unresolved errors.
+
 ## What the inspector shows
 
 - The order, roles, content, and character counts of the most recently captured
@@ -175,6 +210,8 @@ This is the same persisted message structure used by Tavern Helper's
 | `protocols.js` | Bounded card evidence and conditional output requirements |
 | `tags.js` | Bounded protocol inspection and normalization |
 | `analysis.js` | Native regex tracing and context diagnostics |
+| `regex.js` | Rule inventory, native toggle validation, and bounded policy recognition |
+| `diagnostics.js` | Chinese next-step guidance and repair outcome summaries |
 | `repair.js` | Local recovery and validated AI proposals |
 | `persistence.js` | Snapshots, selected-swipe updates, table cells, verified save, undo |
 | `host.js` | SillyTavern APIs, prompt capture, and optional incoming normalization |

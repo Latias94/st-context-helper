@@ -6,6 +6,10 @@ export async function prepareMemoryReload(context, tableUids) {
     if (!tableUids.length || !context.getExtensionManifest?.('st-memory-enhancement')
         || context.extensionSettings.disabledExtensions?.includes('third-party/st-memory-enhancement')) return;
     const { DERIVED } = await import('/scripts/extensions/third-party/st-memory-enhancement/core/manager.js');
+    const current = globalThis.SillyTavern?.getContext?.();
+    if (current?.chat !== context.chat || current?.chatMetadata !== context.chatMetadata) {
+        throw new Error('修复已保存，但当前聊天已切换；已停止缓存刷新，请重新打开原聊天核对。');
+    }
     const cache = DERIVED?.any?.chatSheetMap;
     if (cache) for (const uid of tableUids) delete cache[uid];
 }

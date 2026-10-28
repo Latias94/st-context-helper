@@ -198,6 +198,27 @@ export function extractNarrative(text, profile) {
     return body.replace(/<StatusPlaceHolderImpl\/>/g, '').trim();
 }
 
+// Keep disjoint story spans separate: removing a table between two paragraphs
+// must not make their concatenation look absent from the original source.
+export function narrativeSegments(text, profile) {
+    const normalized = normalizeMessage(text, profile).text;
+    const blocks = inspectTags(normalized, profile).blocks;
+    const bodies = blocks.filter(block => block.kind === 'body');
+    const split = value => value.split(/<StatusPlaceHolderImpl\s*\/?>/gi).map(value => value.trim()).filter(Boolean);
+    if (bodies.length) return bodies.flatMap(block => split(normalized.slice(block.bodyStart, block.bodyEnd)));
+    const removed = blocks.filter(block => block.kind === 'data'
+        || (block.kind === 'reasoning' && (block.closed || block.recoverable)))
+        .filter(block => !blocks.some(other => other !== block && other.start < block.start && other.end >= block.end));
+    const segments = [];
+    let at = 0;
+    for (const block of removed) {
+        segments.push(...split(normalized.slice(at, block.start)));
+        at = block.end;
+    }
+    segments.push(...split(normalized.slice(at)));
+    return segments;
+}
+
 export function extractPatches(text, profile) {
     const normalized = normalizeMessage(text, profile).text;
     const blocks = inspectTags(normalized, profile).blocks.filter(block => block.kind === 'data'

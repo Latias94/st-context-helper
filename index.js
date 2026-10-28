@@ -1,6 +1,7 @@
 import { createHost, getContext } from './src/host.js';
 import { createContextHelperView } from './src/ui.js';
 import { buildLocalPlan, buildRepairMessages, DEFAULT_REPAIR_PROMPT, parseRepairResponse } from './src/repair.js';
+import { repairOutcome } from './src/diagnostics.js';
 import { getRepairConnections, getRepairModels, refreshRepairModels, requestContextRepair } from './src/api.js';
 
 let hostPromise, dialogOpen = false;
@@ -35,9 +36,9 @@ export async function openContextHelper() {
             view.setBackupAvailable(host.hasBackup());
             return current;
         };
-        const run = callback => async () => {
+        const run = callback => async (...args) => {
             view.setBusy(true);
-            try { await callback(); }
+            try { await callback(...args); }
             catch (error) { view.setStatus(error.name === 'AbortError' ? '已取消，未应用修复。' : error.message, true); }
             finally { view.setBusy(false); view.setBackupAvailable(host.hasBackup()); }
         };
@@ -68,11 +69,32 @@ export async function openContextHelper() {
                 if (!pending?.changes.length) throw new Error('请先生成并检查修复预览。');
                 await host.apply(current.snapshot, pending);
                 await inspect();
-                view.setStatus('修复已保存并通过服务器读回校验，可撤销本次修复。');
+                view.setStatus(`修复已保存并通过服务器读回校验，可撤销本次修复。${repairOutcome(current.analysis.issues)}`);
             }),
             onUndo: run(async () => { await host.undo(); await inspect(); view.setStatus('已恢复修复前的数据。'); }),
+            onRegexToggle: async (rule, enabled) => {
+                view.setBusy(true);
+                try {
+                    await host.toggleRegex(rule, enabled);
+                    await inspect();
+                    view.setStatus(`已保存并核对${enabled ? '开启' : '关闭'}正则“${rule.name || '未命名规则'}”，诊断已更新。`);
+                    return { analysis: current.analysis };
+                } catch (error) {
+                    try { await inspect(); error.analysis = current.analysis; } catch { /* Keep the original save error. */ }
+                    throw error;
+                } finally { view.setBusy(false); view.setBackupAvailable(host.hasBackup()); }
+            },
             onExport: () => exportReport(current?.analysis),
-            onOptionsChange: value => host.saveOptions(value),
+            onOptionsChange: async value => {
+                try {
+                    await host.saveOptions(value);
+                    await inspect();
+                    return { analysis: current.analysis };
+                } catch (error) {
+                    try { await inspect(); error.analysis = current.analysis; } catch { /* Preserve the settings error. */ }
+                    throw error;
+                }
+            },
             onModels: async (id, refresh, signal) => refresh ? refreshRepairModels(id, signal) : getRepairModels(id),
             onCancel: () => controller?.abort(),
         });

@@ -121,3 +121,16 @@ test('missing table references remain inspectable but are never an automatic rep
     assert.equal(table.repairable, false);
     assert.ok(table.warning.includes('missing'));
 });
+
+test('settings changes while the server baseline is read invalidate a repair before mutation', async () => {
+    const { context, storage } = host(), snapshot = takeSnapshot(context, { start: 0, end: 0 });
+    const previousRead = storage.read.bind(storage);
+    let changed = false, saves = 0;
+    storage.read = async () => { changed = true; return previousRead(); };
+    storage.assertWritable = () => { if (changed) throw new Error('Regex configuration changed'); };
+    storage.save = async () => { saves++; };
+    await assert.rejects(applyPlan(context, snapshot, { fingerprint: snapshot.fingerprint,
+        messages: [{ id: 0, swipeId: 0, text: 'Fixed' }], variables: [], tables: [] }, storage), /configuration changed/);
+    assert.equal(context.chat[0].mes, 'Old');
+    assert.equal(saves, 0);
+});
