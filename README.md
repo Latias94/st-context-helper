@@ -145,6 +145,11 @@ verification reports a mismatch instead of declaring success.
 
 ## Install and develop
 
+In SillyTavern, open **Extensions → Install extension**, enter
+`https://github.com/Latias94/st-context-helper`, and install it for your user.
+Refresh SillyTavern, then open **Extensions → 上下文助手**.
+
+For development from a local checkout, use the installer below.
 No bundler or dependencies are required.
 
 ```console
