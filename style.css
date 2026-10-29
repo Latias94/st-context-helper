@@ -1460,6 +1460,10 @@
         gap: 10px;
     }
 
+    .context-helper .ch-heading > .ch-title {
+        flex-basis: calc(100% - 58px);
+    }
+
     .context-helper .ch-heading > .ch-badge {
         margin-inline-start: 58px;
     }

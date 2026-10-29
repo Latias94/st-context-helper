@@ -2,6 +2,7 @@
 function tokens(text) {
     const result = [];
     const issues = [];
+    const comments = [];
     let at = 0;
     while (at < text.length) {
         if (at === 0 || text[at - 1] === '\n') {
@@ -38,7 +39,9 @@ function tokens(text) {
             const end = text.indexOf(literalEnd, at + (literalEnd === '-->' ? 4 : 9));
             if (end < 0) issues.push({ code: 'unclosed-xml-literal', severity: 'warning',
                 title: 'XML comment or CDATA section has no terminator',
+                start: at, expected: literalEnd,
                 detail: `Missing ${literalEnd}. Following tags remain literal; close this region or request AI boundary review.` });
+            else if (literalEnd === '-->') comments.push({ start: at, end: end + 3, bodyStart: at + 4, bodyEnd: end });
             at = end < 0 ? text.length : end + literalEnd.length;
             continue;
         }
@@ -53,7 +56,40 @@ function tokens(text) {
         }
         at++;
     }
-    return { tokens: result, issues };
+    return { tokens: result, issues, comments };
+}
+
+// Wrapper syntax may be removed by native prompt rules, but quoted examples stay significant.
+function transparentWrappers(text, profile) {
+    const known = new Set((profile.transparentTags ?? []).map(tag => tag.toLowerCase()));
+    const stack = [], delimiters = [], issues = [];
+    if (!known.size && !profile.reasoningCommentMarker) return { delimiters, issues, comments: [] };
+    const scanned = tokens(text);
+    const comments = profile.reasoningCommentMarker ? scanned.comments.filter(comment =>
+        text.slice(comment.bodyStart, comment.bodyEnd).trimStart().startsWith(profile.reasoningCommentMarker)) : [];
+    for (const token of scanned.tokens.filter(token => known.has(token.lower))) {
+        if (!token.closing) stack.push(token);
+        else if (stack.at(-1)?.lower === token.lower) delimiters.push(stack.pop(), token);
+        else issues.push({ code: 'orphan-transparent', severity: 'warning',
+            title: 'Narrative wrapper has no opener', detail: token.tag });
+    }
+    for (const token of stack) issues.push({ code: 'unclosed-transparent', severity: 'warning',
+        title: 'Narrative wrapper has no terminator', detail: token.tag });
+    return { delimiters, issues, comments };
+}
+
+function visibleNarrative(text, profile) {
+    let result = text;
+    const { delimiters, comments } = transparentWrappers(text, profile);
+    for (const token of [...delimiters, ...comments].sort((a, b) => b.start - a.start)) {
+        result = result.slice(0, token.start) + result.slice(token.end);
+    }
+    return result;
+}
+
+function narrativeBodies(blocks, profile) {
+    const transparent = new Set((profile.transparentTags ?? []).map(tag => tag.toLowerCase()));
+    return blocks.filter(block => block.kind === 'body' && !transparent.has(block.lower));
 }
 
 export function inspectTags(text, profile) {
@@ -158,6 +194,9 @@ export function inspectTags(text, profile) {
             title: `${opaque.kind === 'body' ? 'Narrative' : 'Data'} block is not closed`,
             detail: `${opaque.tag}: missing </${opaque.tag}>. No payload or ending is invented locally.` });
     }
+    for (const block of blocks.filter(block => block.kind === 'body')) {
+        issues.push(...transparentWrappers(text.slice(block.bodyStart, block.bodyEnd), profile).issues);
+    }
     return { blocks: blocks.sort((a, b) => a.start - b.start), issues, structural };
 }
 
@@ -187,15 +226,15 @@ export function normalizeMessage(text, profile) {
 export function extractNarrative(text, profile) {
     const normalized = normalizeMessage(text, profile).text;
     const inspected = inspectTags(normalized, profile);
-    const bodies = inspected.blocks.filter(block => block.kind === 'body');
-    if (bodies.length) return bodies.map(block => normalized.slice(block.bodyStart, block.bodyEnd).trim()).join('\n');
+    const bodies = narrativeBodies(inspected.blocks, profile);
+    if (bodies.length) return bodies.map(block => visibleNarrative(normalized.slice(block.bodyStart, block.bodyEnd), profile).trim()).join('\n');
     const ranges = inspected.blocks
         .filter(block => (block.kind === 'reasoning' && (block.closed || block.recoverable)) || block.kind === 'data');
     let body = normalized;
     for (const block of ranges.filter(block => !ranges.some(other => other.start < block.start && other.end >= block.end)).toReversed()) {
         body = body.slice(0, block.start) + body.slice(block.end);
     }
-    return body.replace(/<StatusPlaceHolderImpl\/>/g, '').trim();
+    return visibleNarrative(body, profile).replace(/<StatusPlaceHolderImpl\/>/g, '').trim();
 }
 
 // Keep disjoint story spans separate: removing a table between two paragraphs
@@ -203,8 +242,19 @@ export function extractNarrative(text, profile) {
 export function narrativeSegments(text, profile) {
     const normalized = normalizeMessage(text, profile).text;
     const blocks = inspectTags(normalized, profile).blocks;
-    const bodies = blocks.filter(block => block.kind === 'body');
-    const split = value => value.split(/<StatusPlaceHolderImpl\s*\/?>/gi).map(value => value.trim()).filter(Boolean);
+    const bodies = narrativeBodies(blocks, profile);
+    const split = value => {
+        const { delimiters, comments } = transparentWrappers(value, profile);
+        const spans = [];
+        let at = 0;
+        for (const range of [...delimiters, ...comments].sort((a, b) => a.start - b.start)) {
+            spans.push(value.slice(at, range.start));
+            at = range.end;
+        }
+        spans.push(value.slice(at));
+        return spans.flatMap(span => span.split(/<StatusPlaceHolderImpl\s*\/?>/gi))
+            .map(span => span.trim()).filter(Boolean);
+    };
     if (bodies.length) return bodies.flatMap(block => split(normalized.slice(block.bodyStart, block.bodyEnd)));
     const removed = blocks.filter(block => block.kind === 'data'
         || (block.kind === 'reasoning' && (block.closed || block.recoverable)))

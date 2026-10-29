@@ -62,7 +62,7 @@ export function createContextHelperView(config = {}) {
                 <label>结束消息<input class="text_pole" name="end" type="number" min="0" step="1" placeholder="最新" data-lock></label>
             </div>
             <label class="ch-adapter">标签适配<select class="text_pole" name="adapter" data-lock>
-                <option value="auto">自动识别预设</option><option value="izumi">Izumi</option><option value="cat-god">小猫之神 / 喵赛亚</option><option value="generic">通用 · 仅观察</option>
+                <option value="auto">自动识别预设</option><option value="izumi">Izumi</option><option value="cat-god">小猫之神 / 喵赛亚</option><option value="kunlun">昆仑 / Kunlun IDE</option><option value="generic">通用 · 仅观察</option>
             </select></label>
             <button type="button" class="menu_button ch-primary" data-action="inspect"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> 分析上下文</button>
             <p class="ch-help ch-scope-note" data-field="scope">消息编号从 0 开始；留空表示全部范围。</p>
@@ -938,6 +938,8 @@ export function createContextHelperView(config = {}) {
         const withBlocks = asArray(analysis.messages).filter(message => asArray(message.blocks).length);
         facts.append(node('p', 'ch-help', `${tables.length} 张表 · ${tables.reduce((sum, table) => sum + asArray(table.rows).length, 0)} 行 · ${withBlocks.length} 条消息含解析块。是否包含 MVU 更新以解析结果为准。`));
         facts.append(node('p', 'ch-help', `思维标签：${asArray(analysis.profile?.reasoningTags).join(' / ') || '未提供'}；正文标签：${asArray(analysis.profile?.bodyTags).join(' / ') || '未提供'}`));
+        if (analysis.profile?.reasoningCommentMarker) facts.append(node('p', 'ch-help',
+            `原生预检格式：<!-- ${analysis.profile.reasoningCommentMarker} … -->；完整注释原样保留。上方思维标签用于兼容旧版 XML 输出。`));
         for (const table of tables) {
             const details = node('details', 'ch-disclosure');
             details.append(node('summary', '', `${table.name || '未命名表格'} · ${asArray(table.rows).length} 行`),

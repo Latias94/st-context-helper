@@ -13,6 +13,14 @@ const profiles = {
         bodyTags: ['game', 'content'], updateTags: ['UpdateVariable'],
         summaryTags: ['summary'], adviceTags: ['advice'],
     },
+    kunlun: {
+        id: 'kunlun', label: '昆仑 / Kunlun IDE',
+        reasoningTag: 'talk', reasoningTags: ['talk', 'thinking', 'think'],
+        reasoningCommentMarker: '[IDE_AST_TRACE]',
+        bodyTags: ['content', 'game', 'hidden'], transparentTags: ['hidden'],
+        updateTags: ['UpdateVariable'], statusTags: ['sumUp', 'pose', 'choices'],
+        summaryTags: ['sumUp'], adviceTags: ['choices'],
+    },
     generic: {
         id: 'generic', label: 'Generic / observe only',
         reasoningTag: 'thinking', reasoningTags: ['thinking', 'think'],
@@ -29,9 +37,10 @@ export function enabledPrompts(preset = {}) {
 }
 
 export function resolveAdapter({ presetName = '', preset = {}, adapter = 'auto', cardProtocol } = {}) {
-    const recognize = source => /izumi|lzumi|konatan_planning|泉此方/i.test(source) ? 'izumi'
+    const recognize = (source, name = false) => /kunlun/i.test(source) || (name && /昆仑/.test(source)) ? 'kunlun'
+        : /izumi|lzumi|konatan_planning|泉此方/i.test(source) ? 'izumi'
         : /小猫之神|喵赛亚|think_nya~|meowssiah/i.test(source) ? 'cat-god' : null;
-    const id = adapter !== 'auto' && profiles[adapter] ? adapter : recognize(presetName)
+    const id = adapter !== 'auto' && profiles[adapter] ? adapter : recognize(presetName, true)
         ?? recognize(enabledPrompts(preset).map(prompt => prompt.content ?? '').join('\n')) ?? 'generic';
     return withCardProtocol(structuredClone(profiles[id]), cardProtocol);
 }

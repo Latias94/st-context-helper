@@ -1,8 +1,8 @@
 # Context Helper
 
 A SillyTavern extension for inspecting context construction and repairing saved
-conversations. The first preset adapters cover **Izumi** and **Cat God / Meowssiah**
-(`小猫之神 / 喵赛亚`). Unknown presets remain available for inspection.
+conversations. Preset adapters cover **Izumi**, **Cat God / Meowssiah**
+(`小猫之神 / 喵赛亚`), and **Kunlun IDE** (`昆仑`). Unknown presets remain available for inspection.
 
 Open **Extensions → 上下文助手** after installation.
 
@@ -142,6 +142,28 @@ multiple source-mutating extensions.
 Izumi uses one `konatan_planning~` reasoning block. Cat God uses `think_nya~`.
 Both adapters recognize legacy `thinking` / `think` wrappers and preserve their
 respective narrative and update blocks.
+
+Kunlun is detected by the case-insensitive `kunlun` marker in a preset name or
+enabled prompt content; `昆仑` also identifies a preset name. It can be selected
+manually in the adapter menu. The `kunlun_IDE_1.2r` format uses an opaque
+`<!-- [IDE_AST_TRACE] ... -->` precheck comment, `<content>` narrative, and
+`<sumUp>`, `<pose>`, and `<choices>` footer blocks. Intact top-level native comments remain
+unchanged. Legacy `<talk>`, `<thinking>`, and `<think>` reasoning can be normalized
+to `<talk>` without moving story or data into reasoning.
+
+Real, balanced `<hidden>` wrappers are transparent to narrative comparisons,
+matching the preset's native unwrap rule. Their payload and original source are
+retained; quoted and fenced examples remain significant. Unbalanced wrappers
+inside a complete body are reported for manual correction.
+An unclosed native precheck comment is retained locally. An AI preview can only
+insert its missing `-->` directly before an existing, complete body opener; all
+other source bytes and payloads must remain unchanged.
+
+The native 80-depth erase and 40-depth summary-retention patterns are recognized
+as policies only with matching execution evidence. Summary retention returns
+bare `$2` text, so the later tag-based summary cleanup does not erase it at depth
+40. A later rule that actually removes that retained text is still reported as
+loss. The helper does not change the preset or its regex settings.
 
 The scanner recognizes protocol names and treats inline/fenced code and quoted
 strings as literals, including single-quoted table-action strings. It is not a

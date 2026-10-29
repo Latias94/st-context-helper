@@ -41,6 +41,9 @@ test('policy recognition needs actual full erasure and finite old-history depth,
     assert.equal(isDepthTrimRule({ ...trim, replaceString: 'Summary' }), false);
     assert.equal(isDepthTrimRule({ ...trim, substituteRegex: 1 }), false);
     assert.equal(isDepthSummaryRule({ ...trim, scriptName: 'Keep summary', findRegex: '/<content>.*<\\/content>/gs' }), false);
+    assert.equal(isDepthTrimRule({ ...trim, findRegex: '/^([\\s\\S]*?)$/m' }), false);
+    assert.equal(isDepthSummaryRule({ ...trim, findRegex: '/^([\\s\\S]*?)<sumUp>([\\s\\S]*?)<\\/sumUp>([\\s\\S]*?)$/gm',
+        replaceString: '$2' }), false);
 });
 
 test('material narrative truncation cannot pass a majority-fragment heuristic', () => {

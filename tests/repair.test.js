@@ -152,3 +152,50 @@ test('literal and entity-escaped reasoning labels cannot be deleted or turned in
     snapshot.chat[1].mes = '<content>Story.</content>&lt;thinking&gt;LITERAL_EXAMPLE&lt;/thinking&gt;';
     assert.throws(() => parseRepairResponse(propose('<content>Story.</content><thinking>LITERAL_EXAMPLE</thinking>'), snapshot), /preserve/i);
 });
+
+test('Kunlun native precheck completion only inserts a terminator before an existing body', () => {
+    const snapshot = fixture();
+    snapshot.presetName = 'kunlun_IDE_1.2r';
+    snapshot.chat[1].mes = '<!-- [IDE_AST_TRACE]\nPlan is complete.\n<content>The adviser has already arrived.</content>'
+        + '<sumUp>Arrival complete.</sumUp>';
+    const fixed = snapshot.chat[1].mes.replace('\n<content>', '-->\n<content>');
+    const propose = text => JSON.stringify({ version: 1, messages: [{ id: 1, swipeId: 0, text }] });
+    assert.equal(buildLocalPlan(snapshot).messages.length, 0);
+    assert.equal(parseRepairResponse(propose(fixed), snapshot).messages[0].text, fixed);
+    for (const bad of [
+        fixed.replace('already arrived', 'not yet arrived'),
+        fixed.replace('Arrival complete.', 'Arrival pending.'),
+        fixed.replace('Plan is complete.', ''),
+        fixed.replace('-->\n<content>', '\n<content>').replace('</content>', '</content>-->'),
+        fixed.replace('[IDE_AST_TRACE]', '[OTHER_COMMENT]'),
+    ]) assert.throws(() => parseRepairResponse(propose(bad), snapshot), /preserve|payload|ambiguous/i);
+    snapshot.chat[1].mes = snapshot.chat[1].mes.replace('[IDE_AST_TRACE]', '[OTHER_COMMENT]');
+    assert.throws(() => parseRepairResponse(propose(fixed.replace('[IDE_AST_TRACE]', '[OTHER_COMMENT]')), snapshot), /preserve|payload|ambiguous/i);
+});
+
+test('Kunlun transparent wrappers cannot hide adjacent unframed narrative in AI reasoning', () => {
+    const snapshot = fixture();
+    snapshot.presetName = 'kunlun_IDE_1.2r';
+    const propose = text => JSON.stringify({ version: 1, messages: [{ id: 1, swipeId: 0, text }] });
+    for (const [source, changed] of [
+        ['<hidden>BODY</hidden>\nTAIL', '<hidden>BODY</hidden>\n<talk>TAIL</talk>'],
+        ['HEAD\n<hidden>BODY</hidden>', '<talk>HEAD</talk>\n<hidden>BODY</hidden>'],
+    ]) {
+        snapshot.chat[1].mes = source;
+        assert.throws(() => parseRepairResponse(propose(changed), snapshot), /preserve/i);
+    }
+});
+
+test('unfinished Kunlun comments require strict completion even when generic comparisons could pass', () => {
+    const snapshot = fixture();
+    snapshot.presetName = 'kunlun_IDE_1.2r';
+    const propose = text => JSON.stringify({ version: 1, messages: [{ id: 1, swipeId: 0, text }] });
+    snapshot.chat[1].mes = '<hidden>BODY</hidden>\n<!-- [IDE_AST_TRACE]\nKeep  this --&gt;';
+    assert.throws(() => parseRepairResponse(propose('<hidden>BODY</hidden>\n<!-- [IDE_AST_TRACE]\nKeep this -->'), snapshot), /preserve all bytes/i);
+    snapshot.chat[1].mes = '<!-- [IDE_AST_TRACE]\nKeep  this.\n<content>Story.</content>';
+    const valid = snapshot.chat[1].mes.replace('\n<content>', '-->\n<content>');
+    assert.throws(() => parseRepairResponse(propose(valid.replace('Keep  this.', 'Keep this.')), snapshot), /preserve all bytes/i);
+    snapshot.chat[1].mes = '<thinking>Existing plan.\n</thinking><content>Earlier story.</content>\n' + snapshot.chat[1].mes;
+    const mixed = snapshot.chat[1].mes.replace('\n<content>Story.', '-->\n<content>Story.');
+    assert.equal(parseRepairResponse(propose(mixed), snapshot).messages[0].text, mixed);
+});

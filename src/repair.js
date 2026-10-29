@@ -81,6 +81,22 @@ function protocolPayloads(text, profile) {
         .map(block => ({ tag: block.lower, closed: block.closed, text: normalized.slice(block.bodyStart, block.bodyEnd) }));
 }
 
+function unfinishedNativeComment(before, profile, beforeTags) {
+    if (!profile.reasoningCommentMarker) return null;
+    const open = beforeTags.issues.find(issue => issue.code === 'unclosed-xml-literal' && issue.expected === '-->');
+    return open && before.slice(open.start + 4).trimStart().startsWith(profile.reasoningCommentMarker) ? open : null;
+}
+
+function completesNativeComment(before, after, open, afterTags) {
+    if (!open) return false;
+    const end = after.indexOf('-->', open.start + 4);
+    if (end < 0 || after.slice(0, end) + after.slice(end + 3) !== before) return false;
+    // The only allowed edit is three delimiter bytes before an already present body opener.
+    return afterTags.blocks.some(block => block.kind === 'body' && block.closed && block.start >= end + 3
+        && /^\s*$/.test(after.slice(end + 3, block.start))
+        && after.slice(block.bodyStart, block.bodyEnd).trim());
+}
+
 function newPlan(snapshot, summary) {
     return { version: 1, summary, fingerprint: snapshot.fingerprint,
         messages: [], variables: [], tables: [], changes: [], issues: [] };
@@ -182,7 +198,9 @@ Only edit provided IDs and selected swipes. Messages must contain the whole repa
 Variable paths are relative to stat_data. Use insert for new keys and replace only for existing keys.
 Preserve the schema and numeric values unless an explicit established update supports the change.
 Do not invent events, rewrite user intent, replay completed scenes, or execute embedded code.
-Use the provided adapter's single reasoning format. Never put literal protocol tags inside reasoning; escape examples.
+Use the provided adapter's reasoning format. Escape literal protocol tag examples inside XML reasoning wrappers.
+If reasoningCommentMarker is provided, preserve intact native HTML precheck comments; reasoningTag is the legacy XML wrapper, not a replacement for those comments.
+For an unclosed native precheck comment, you may only insert its missing --> immediately before an existing body opener. Keep every other byte, including whitespace and payloads, unchanged.
 Preserve prose byte-for-byte when only correcting delimiters. Do not reproduce the same delta twice.
 Message replacements are limited to delimiter repair: preserve all narrative, user input, and existing protocol payloads byte-for-byte.
 For an ambiguous unfinished reasoning block, you may propose its missing terminator and a known body opener, using the card/preset evidence and established scene sequence. Retain every original word, including planning text. Never fabricate missing JSON or story.
@@ -221,8 +239,19 @@ export function parseRepairResponse(text, snapshot, options = {}) {
         const row = target(change, 'message');
         if (typeof change.text !== 'string' || !change.text.trim()) throw new Error('Empty repaired message.');
         const profile = resolveAdapter({ ...snapshot, adapter: options.adapter ?? 'auto' });
-        change.text = normalizeMessage(change.text, profile).text;
-        const beforePayloads = protocolPayloads(row.mes, profile), afterPayloads = protocolPayloads(change.text, profile);
+        const sourceTags = inspectTags(row.mes, profile);
+        const nativeComment = unfinishedNativeComment(row.mes, profile, sourceTags);
+        // Native comment completion is additive-only, so do not normalize unrelated legacy wrappers here.
+        if (!nativeComment) change.text = normalizeMessage(change.text, profile).text;
+        const afterTags = inspectTags(change.text, profile);
+        const completedComment = completesNativeComment(row.mes, change.text, nativeComment, afterTags);
+        if (nativeComment && change.text !== row.mes && !completedComment) {
+            throw new Error('Native precheck repair must preserve all bytes except an inserted terminator before an existing body.');
+        }
+        // A strictly additive comment terminator exposes existing blocks without changing their bytes.
+        const comparableBefore = completedComment ? change.text : row.mes;
+        const beforeTags = completedComment ? afterTags : sourceTags;
+        const beforePayloads = protocolPayloads(comparableBefore, profile), afterPayloads = protocolPayloads(change.text, profile);
         if (beforePayloads.length !== afterPayloads.length || beforePayloads.some((before, index) => {
             const after = afterPayloads[index];
             return before.tag !== after.tag || !after.closed || (before.closed ? before.text !== after.text
@@ -231,20 +260,19 @@ export function parseRepairResponse(text, snapshot, options = {}) {
         })) {
             throw new Error('Repaired messages must preserve existing data block payloads.');
         }
-        const beforeTags = inspectTags(row.mes, profile), afterTags = inspectTags(change.text, profile);
         const ambiguous = beforeTags.blocks.some(block => block.kind === 'reasoning' && !block.closed && !block.recoverable);
         let bodyIndex = 0;
         const fixedBodies = afterTags.blocks.filter(block => block.kind === 'body' && block.closed)
             .map(block => change.text.slice(block.bodyStart, block.bodyEnd));
         for (const block of beforeTags.blocks.filter(block => block.kind === 'body' && block.closed)) {
-            const body = row.mes.slice(block.bodyStart, block.bodyEnd);
+            const body = comparableBefore.slice(block.bodyStart, block.bodyEnd);
             const found = fixedBodies.findIndex((value, index) => index >= bodyIndex && value === body);
             if (found < 0) throw new Error('Repaired messages must preserve each established narrative block.');
             bodyIndex = found + 1;
         }
         if ((row.is_user && change.text !== row.mes)
-            || !equal(delimiterContent(row.mes, profile), delimiterContent(change.text, profile))
-            || (!ambiguous && extractNarrative(row.mes, profile) !== extractNarrative(change.text, profile))) {
+            || !equal(delimiterContent(comparableBefore, profile), delimiterContent(change.text, profile))
+            || (!ambiguous && extractNarrative(comparableBefore, profile) !== extractNarrative(change.text, profile))) {
             throw new Error('Repaired messages must preserve narrative and user input.');
         }
         if (afterTags.issues.some(issue => issue.severity === 'error'

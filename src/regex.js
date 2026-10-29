@@ -31,14 +31,18 @@ export function isDepthTrimRule(rule) {
     const pattern = regex?.[1] ?? rule.findRegex;
     const flags = regex?.[2] ?? '';
     return ['[\\s\\S]*', '[\\s\\S]+', '^[\\s\\S]*$', '^[\\s\\S]+$'].includes(pattern)
+        || (pattern === '^([\\s\\S]*?)$' && !flags.includes('m'))
         || (flags.includes('s') && ['.*', '.+', '^.*$', '^.+$'].includes(pattern));
 }
 
 export function isDepthSummaryRule(rule) {
     if (rule.minDepth == null || !Number.isFinite(Number(rule.minDepth)) || rule.minDepth < 1
         || Number(rule.substituteRegex ?? 0) !== 0) return false;
-    const pattern = /^\/([\s\S]*)\/[a-z]*$/i.exec(rule.findRegex ?? '')?.[1] ?? rule.findRegex;
+    const regex = /^\/([\s\S]*)\/([a-z]*)$/i.exec(rule.findRegex ?? '');
+    const pattern = regex?.[1] ?? rule.findRegex;
     return (pattern === '([\\s\\S]*?)(<progress>[\\s\\S]*?<\\/progress>)([\\s\\S]*?$)' && rule.replaceString === '$2')
+        || (pattern === '^([\\s\\S]*?)<sumUp>([\\s\\S]*?)<\\/sumUp>([\\s\\S]*?)$'
+            && rule.replaceString === '$2' && !regex?.[2].includes('m'))
         || (pattern === '[\\s\\S]*?(?<!<details>\\s*)<summary>([\\s\\S]*?)<\\/summary>[\\s\\S]*'
             && rule.replaceString?.replace(/\s+/g, '') === '<summary>$1</summary>');
 }
