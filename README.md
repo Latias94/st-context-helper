@@ -6,6 +6,35 @@ conversations. The first preset adapters cover **Izumi** and **Cat God / Meowssi
 
 Open **Extensions → 上下文助手** after installation.
 
+## Optional floating monitor
+
+The floating monitor is **hidden by default**, including existing installations.
+Enable **Settings → 显示上下文浮窗** to show it. This preference and its token
+warning threshold apply across chats. Drag the grip to move it, collapse it to
+keep a compact status, or close it to save the hidden preference. Settings can
+show it again.
+
+The monitor checks the latest 12 chat messages and current memory tables after
+chat changes, complete replies, edits, and configuration changes. It waits during
+generation, saving, and message editing rather than diagnosing streamed fragments.
+Click a warning to open diagnosis and its suggested next steps. Verified history
+trimming and summary policies are shown separately and do not raise an error.
+Monitoring does not request AI repairs or apply history changes.
+
+Token utilization is `(estimated full input + reserved output) / configured full
+context limit`. The default warning threshold is **85%**, configurable from 1%
+to 100%. This uses the most recent captured complete text request, rather than
+the 12-message diagnosis range or a character count.
+OpenAI text counts include estimated message framing; other recognized native
+tokenizers use SillyTavern's text serialization and may omit provider-specific
+chat-template overhead. The inspector shows this information even when the
+floating monitor is hidden.
+Counts describe the captured event stage and configured budget, not provider
+billing or a guaranteed prediction for the next request. The next response,
+world-info activation, later extensions, and provider transformations can change
+usage. Unsupported or unverifiable requests show unknown usage instead of a
+misleading percentage.
+
 ## Settings and next steps
 
 The status strip stays visible across all four tabs. It shows whether automatic

@@ -1,5 +1,7 @@
 import { diagnosisSummary, presentIssue } from './diagnostics.js';
 import { regexDepthLabel, regexSourceName } from './regex.js';
+import { monitorSettings } from './monitor.js';
+import { renderTokenUsage } from './token-view.js';
 
 let viewSequence = 0;
 
@@ -85,6 +87,7 @@ export function createContextHelperView(config = {}) {
         </div>
         <section class="ch-panel" data-panel="inspector" role="tabpanel">
             <div class="ch-provenance" data-field="provenance"><strong>先查看，再处理</strong><p>分析当前聊天，查看提示词事件快照或本地正则模拟。两种结果会分别标注。</p></div>
+            <section class="ch-token-summary" aria-label="完整提示词 token 统计" data-field="token-summary"></section>
             <details class="ch-disclosure ch-pipeline" open>
                 <summary>上下文如何构建 <small>构建路径</small></summary>
                 <ol class="ch-pipeline-list" data-field="pipeline"></ol>
@@ -157,7 +160,12 @@ export function createContextHelperView(config = {}) {
             <div class="ch-plan" data-field="plan"><div class="ch-empty">先生成修复预览，再逐项核对原文与修改内容。</div></div>
         </section>
         <section class="ch-panel" data-panel="settings" role="tabpanel" hidden>
-            <div class="ch-section-heading"><div><h3>自动化与规则设置</h3><p class="ch-help">这里的开关影响当前聊天的新消息处理；历史消息仍由手动预览与修复控制。</p></div><span class="ch-badge" data-field="settings-status">等待分析</span></div>
+            <div class="ch-section-heading"><div><h3>监测、自动化与规则设置</h3><p class="ch-help">浮窗是全局显示设置；新消息规范化按聊天保存。</p></div><span class="ch-badge" data-field="settings-status">等待分析</span></div>
+            <div class="ch-settings-monitor">
+                <label class="ch-incoming"><input type="checkbox" name="showMonitor" data-lock><span><strong>显示上下文浮窗</strong><small>默认关闭。开启后随聊天变化检查最近 12 条消息及当前记忆表格；可拖动、收起，或点击进入诊断。</small></span></label>
+                <label class="ch-threshold">Token 提醒阈值（%）<input class="text_pole" name="tokenWarningPercent" type="number" min="1" max="100" step="1" data-lock></label>
+                <p class="ch-help">达到阈值时，浮窗会提示。占用率 =（上次捕获的完整输入估算 token + 输出预留）÷ 当时配置的上下文上限；默认 85%。未捕获请求时不推算完整用量。浮窗只监测，不会自动请求 AI 或应用历史修复。</p>
+            </div>
             <div class="ch-settings-automation">
                 <label class="ch-incoming"><input type="checkbox" name="normalizeIncoming" data-lock><span><strong>规范新助手消息的标签边界</strong><small>范围：当前聊天。仅对之后收到的新助手消息生效；不会回写历史消息，也不会自动应用修复预览。</small></span></label>
                 <p class="ch-help">通用适配器下自动规范化会暂停；请在上方选择可识别的适配器后再分析。切换后会保存并重新分析；保存失败会显示实际状态和原因。</p>
@@ -186,7 +194,8 @@ export function createContextHelperView(config = {}) {
     const action = name => element.querySelector(`[data-action="${name}"]`);
     const tabs = [...element.querySelectorAll('[data-tab]')];
     const panels = [...element.querySelectorAll('[data-panel]')];
-    const options = { adapter: 'auto', connectionId: 'current', model: '', maxTokens: 8192, prompt: '', normalizeIncoming: false, ...config.options };
+    const options = { adapter: 'auto', connectionId: 'current', model: '', maxTokens: 8192, prompt: '', normalizeIncoming: false,
+        ...config.options, ...monitorSettings(config.options) };
     let analysis = null;
     let plan = null;
     let externalBusy = false;
@@ -206,7 +215,7 @@ export function createContextHelperView(config = {}) {
     let regexSearch = '';
     let regexSource = 'all';
 
-    for (const name of ['start', 'end', 'adapter', 'connectionId', 'model', 'maxTokens', 'prompt']) {
+    for (const name of ['start', 'end', 'adapter', 'connectionId', 'model', 'maxTokens', 'prompt', 'tokenWarningPercent']) {
         const value = options[name];
         if (control(name).tagName === 'SELECT' && value != null && ![...control(name).options].some(item => item.value === String(value))) {
             control(name).append(new Option(name === 'connectionId' ? '已保存的连接（等待加载）' : String(value), String(value)));
@@ -214,6 +223,7 @@ export function createContextHelperView(config = {}) {
         control(name).value = name === 'end' && value === -1 ? '' : value ?? '';
     }
     control('normalizeIncoming').checked = Boolean(options.normalizeIncoming);
+    control('showMonitor').checked = options.showMonitor;
     field('models').id = `${id}-models`;
     control('model').setAttribute('list', field('models').id);
     tabs.forEach(tab => {
@@ -247,6 +257,8 @@ export function createContextHelperView(config = {}) {
         const start = integer('start', '起始消息', 0, 0);
         const end = integer('end', '结束消息', 0, null);
         if (end !== null && end < start) throw new Error('结束消息不能早于起始消息。');
+        const tokenWarningPercent = integer('tokenWarningPercent', 'Token 提醒阈值', 1, 85);
+        if (tokenWarningPercent > 100) throw new Error('Token 提醒阈值不能大于 100%。');
         return {
             start, end,
             adapter: control('adapter').value || 'auto',
@@ -255,6 +267,8 @@ export function createContextHelperView(config = {}) {
             maxTokens: integer('maxTokens', '最大输出 token', 1, 8192),
             prompt: control('prompt').value,
             normalizeIncoming: control('normalizeIncoming').checked,
+            showMonitor: control('showMonitor').checked,
+            tokenWarningPercent,
         };
     }
 
@@ -288,6 +302,7 @@ export function createContextHelperView(config = {}) {
 
     function selectTab(name, focus = false) {
         if (disposed) return;
+        if (!tabs.some(tab => tab.dataset.tab === name)) return;
         tabs.forEach(tab => {
             const active = tab.dataset.tab === name;
             tab.setAttribute('aria-selected', String(active));
@@ -943,6 +958,13 @@ export function createContextHelperView(config = {}) {
             control('normalizeIncoming').checked = Boolean(analysis.automation.enabled);
             savedOptions.normalizeIncoming = Boolean(analysis.automation.enabled);
         }
+        if (analysis?.monitorSettings) {
+            const monitor = monitorSettings(analysis.monitorSettings);
+            control('showMonitor').checked = monitor.showMonitor;
+            control('tokenWarningPercent').value = monitor.tokenWarningPercent;
+            Object.assign(savedOptions, monitor);
+        }
+        renderTokenUsage(field('token-summary'), analysis?.tokens);
         showPlan(null);
         renderAutomation();
         renderRegexRules();
@@ -1080,6 +1102,14 @@ export function createContextHelperView(config = {}) {
                 } else {
                     control('adapter').value = savedOptions.adapter || 'auto';
                     control('normalizeIncoming').checked = Boolean(savedOptions.normalizeIncoming);
+                    control('showMonitor').checked = Boolean(savedOptions.showMonitor);
+                    control('tokenWarningPercent').value = savedOptions.tokenWarningPercent;
+                }
+                if (error.monitorSettings) {
+                    const actual = monitorSettings(error.monitorSettings);
+                    control('showMonitor').checked = actual.showMonitor;
+                    control('tokenWarningPercent').value = actual.tokenWarningPercent;
+                    Object.assign(savedOptions, actual);
                 }
                 reportError(error);
             }
@@ -1175,7 +1205,7 @@ export function createContextHelperView(config = {}) {
     showAnalysis(null);
 
     return {
-        element, getOptions, setBusy, showAnalysis, showPlan, showRegexRule, setStatus, setConnections, setModels, dispose,
+        element, getOptions, setBusy, showAnalysis, showPlan, showRegexRule, setStatus, setConnections, setModels, dispose, selectTab,
         setBackupAvailable(available) {
             if (disposed) return;
             backupAvailable = Boolean(available);

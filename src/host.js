@@ -5,14 +5,19 @@ import { applyPlan, canUndoRepair, takeSnapshot, undoRepair, verifyRepairState }
 import { deriveCardProtocol } from './protocols.js';
 import { prepareMemoryReload } from './memory.js';
 import { describeRegexRules, prepareRegexToggle } from './regex.js';
+import { monitorSettings, MONITOR_RECENT_MESSAGES } from './monitor.js';
+import { calculateTokenBudget, countEncodedMessages, estimateContextUsage } from './tokens.js';
 
 const key = context => JSON.stringify([context.chatId, context.characterId, context.groupId]);
+// A group's active speaker is cleared after generation; the conversation stays the same.
+const promptKey = context => JSON.stringify(context.groupId != null
+    ? ['group', context.groupId, context.chatId] : ['character', context.characterId, context.chatId]);
 let nativePromise;
 export function loadNative() {
     nativePromise ??= Promise.all([
         import('/script.js'), import('/scripts/openai.js'), import('/scripts/preset-manager.js'),
-        import('/scripts/extensions/regex/engine.js'), import('/scripts/popup.js'),
-    ]).then(([script, openai, presets, regex, popup]) => ({ script, openai, presets, regex, popup }));
+        import('/scripts/extensions/regex/engine.js'), import('/scripts/popup.js'), import('/scripts/tokenizers.js'),
+    ]).then(([script, openai, presets, regex, popup, tokenizers]) => ({ script, openai, presets, regex, popup, tokenizers }));
     return nativePromise;
 }
 
@@ -97,36 +102,77 @@ function safeCapture(messages, stage, model) {
     return { stage, capturedAt: new Date().toISOString(), model,
         messages: messages.map(message => {
             const safe = {};
-            for (const field of ['role', 'name', 'content', 'tool_calls', 'tool_call_id']) {
-                if (message[field] !== undefined) safe[field] = structuredClone(message[field]);
+            for (const [field, value] of Object.entries(message)) {
+                if (['role', 'name', 'content', 'tool_calls', 'tool_call_id'].includes(field) && value !== undefined) {
+                    safe[field] = structuredClone(value);
+                }
             }
             return safe;
         }) };
 }
 
-export async function createHost() {
-    const native = await loadNative();
+export async function createHost(dependencies = {}) {
+    const native = dependencies.native ?? await loadNative();
     let capture = null, captureKey = '', processingIncoming = false, cardProtocol = null;
+    let tokenCount = null, tokenAbort = null;
     const context = getContext();
+    const subscribers = new Set();
+    const notify = () => { for (const callback of subscribers) callback(); };
     const watch = (eventName, callback, first = false) => {
         if (!eventName) return;
         const method = first && context.eventSource.makeFirst ? 'makeFirst' : context.eventSource.makeLast ? 'makeLast' : 'on';
         context.eventSource[method](eventName, callback);
     };
+    function storeCapture(next, data) {
+        tokenAbort?.abort();
+        tokenCount = null;
+        const settings = native.openai.oai_settings;
+        let tokenizerModel;
+        try { tokenizerModel = native.tokenizers.getTokenizerModel(); } catch { /* Counting must not interrupt generation. */ }
+        if (tokenizerModel === 'gpt-3.5-turbo' && !String(next.model ?? '').includes('gpt-3.5-turbo')) {
+            tokenizerModel = undefined;
+        }
+        capture = {
+            ...next, kind: 'captured', scope: 'full',
+            contextLimit: Number(settings.openai_max_context),
+            reservedOutputTokens: Number(data?.max_completion_tokens ?? data?.max_tokens ?? settings.openai_max_tokens),
+            tokenizerModel,
+            source: settings.chat_completion_source,
+            unsupportedExtras: Boolean(data?.json_schema || data?.response_format?.type && data.response_format.type !== 'text'
+                || [data?.tools, data?.functions].some(value => value != null && (!Array.isArray(value) || value.length))
+                || (data?.messages ?? []).some(message => Object.keys(message)
+                    .some(field => !['role', 'name', 'content'].includes(field)))),
+        };
+        captureKey = promptKey(getContext());
+        notify();
+    }
     watch(context.eventTypes.CHAT_COMPLETION_PROMPT_READY, data => {
         if (data?.dryRun) return;
         const next = safeCapture(data?.chat, 'CHAT_COMPLETION_PROMPT_READY', native.openai.getChatCompletionModel?.());
-        if (next) { capture = next; captureKey = key(getContext()); }
+        if (next) storeCapture(next, data);
     });
     watch(context.eventTypes.CHAT_COMPLETION_SETTINGS_READY, data => {
         if (data?.dryRun) return;
         const next = safeCapture(data?.messages, 'CHAT_COMPLETION_SETTINGS_READY', data?.model);
-        if (next) { capture = next; captureKey = key(getContext()); }
+        if (next) storeCapture(next, data);
     });
     watch(context.eventTypes.CHAT_CHANGED, () => {
-        if (captureKey !== key(getContext())) capture = null;
+        if (captureKey !== promptKey(getContext())) {
+            capture = null;
+            tokenAbort?.abort();
+            tokenCount = null;
+        }
         cardProtocol = null;
     });
+    for (const name of ['APP_READY', 'CHAT_CHANGED', 'CHAT_LOADED', 'GENERATION_STARTED',
+        'GENERATION_ENDED', 'GENERATION_STOPPED', 'MESSAGE_SENT', 'MESSAGE_RECEIVED',
+        'MESSAGE_EDITED', 'MESSAGE_DELETED', 'MESSAGE_SWIPED', 'MESSAGE_SWIPE_DELETED',
+        'MESSAGE_REASONING_EDITED', 'MESSAGE_REASONING_DELETED', 'CHARACTER_EDITED',
+        'SETTINGS_UPDATED', 'OAI_PRESET_CHANGED_AFTER', 'CHATCOMPLETION_MODEL_CHANGED',
+        'CHATCOMPLETION_SOURCE_CHANGED', 'CONNECTION_PROFILE_LOADED', 'MAIN_API_CHANGED',
+        'WORLDINFO_UPDATED', 'WORLDINFO_SETTINGS_UPDATED']) {
+        watch(context.eventTypes[name], notify);
+    }
     watch(context.eventTypes.MESSAGE_RECEIVED, async id => {
         const current = getContext(), row = current.chat[Number(id)];
         if (processingIncoming || !current.chatMetadata.context_helper?.normalizeIncoming || !row || row.is_user) return;
@@ -180,7 +226,7 @@ export async function createHost() {
                 contextHelperSource: group.source,
                 contextHelperKey: `${group.source}:${group.scripts.indexOf(rule)}:${rule.id ?? ''}` })));
         const analysis = analyzeSnapshot(source, {
-            adapter: options.adapter, promptCapture: captureKey === key(getContext()) ? capture : null,
+            adapter: options.adapter, promptCapture: captureKey === promptKey(getContext()) ? capture : null,
             canUseTools: (await import('/scripts/tool-calling.js')).ToolManager.isToolCallingSupported(),
             traceMessage: (text, placement, depth, evidence) =>
                 traceRegexMessage(text, placement, depth, scripts, native.regex.runRegexScript, evidence),
@@ -202,7 +248,84 @@ export async function createHost() {
                 text: entry.value ?? entry.prompt ?? '',
             })),
         };
+        analysis.monitorSettings = monitorSettings(getContext().extensionSettings.context_helper);
+        analysis.tokens = await tokenUsage();
         return { snapshot: source, analysis };
+    }
+
+    async function tokenUsage() {
+        const current = getContext(), captured = capture;
+        const unknown = reason => ({ status: 'unavailable', source: 'unavailable', reason });
+        if (current.mainApi !== 'openai' || captureKey !== promptKey(current)
+            || !captured || captured.stage !== 'CHAT_COMPLETION_SETTINGS_READY' || captured.unsupportedExtras) {
+            return unknown('unsupported-capture');
+        }
+        const thresholdPercent = monitorSettings(current.extensionSettings.context_helper).tokenWarningPercent;
+        const cached = tokenCount;
+        if (!cached || cached.capture !== captured) {
+            tokenAbort = new AbortController();
+            const signal = AbortSignal.any([tokenAbort.signal, AbortSignal.timeout(15000)]);
+            const entry = { capture: captured };
+            entry.promise = estimateContextUsage({
+                capture: captured, contextLimit: captured.contextLimit,
+                reservedOutputTokens: captured.reservedOutputTokens, thresholdPercent,
+            }, { countMessages: messages => countEncodedMessages(messages, {
+                tokenizerModel: captured.tokenizerModel,
+                async encode(text) {
+                    const response = await fetch(`/api/tokenizers/openai/encode?model=${encodeURIComponent(captured.tokenizerModel)}`, {
+                        method: 'POST', headers: current.getRequestHeaders(), body: JSON.stringify({ text }), signal,
+                    });
+                    if (!response.ok) throw new Error('Local token encoding failed.');
+                    return response.json();
+                },
+            }) });
+            tokenCount = entry;
+        }
+        const entry = tokenCount, result = await entry.promise;
+        if (result.status !== 'available' && tokenCount === entry) tokenCount = null;
+        if (capture !== captured || captureKey !== promptKey(getContext())) return unknown('unsupported-capture');
+        if (result.status !== 'available') return result;
+        const budget = calculateTokenBudget({ inputTokens: result.inputTokens,
+            contextLimit: captured.contextLimit, reservedOutputTokens: captured.reservedOutputTokens,
+            thresholdPercent: monitorSettings(getContext().extensionSettings.context_helper).tokenWarningPercent });
+        const settings = native.openai.oai_settings;
+        const changed = getContext().mainApi !== 'openai' || settings.chat_completion_source !== captured.source
+            || native.openai.getChatCompletionModel?.() !== captured.model
+            || Number(settings.openai_max_context) !== captured.contextLimit;
+        return { ...result, ...budget, capturedAt: captured.capturedAt, stage: captured.stage,
+            ...(changed ? { reason: 'configuration-changed' } : {}) };
+    }
+
+    async function inspectMonitor() {
+        const current = getContext();
+        if (!current.chatId || !current.chat?.length) return { active: false };
+        const owner = regexOwner(native, current);
+        const busy = native.script.isGenerating() || native.script.isChatSaving || current.streamingProcessor
+            || document.querySelector('#chat .edit_textarea, #chat .reasoning_edit_textarea');
+        if (busy) return { active: true, diagnosisPending: true, tokens: await tokenUsage() };
+        const { analysis } = await inspect({
+            start: Math.max(0, current.chat.length - MONITOR_RECENT_MESSAGES), end: current.chat.length - 1,
+            adapter: current.chatMetadata.context_helper?.adapter ?? current.extensionSettings.context_helper?.adapter ?? 'auto',
+        });
+        if (owner !== regexOwner(native, getContext())) throw new Error('Conversation changed.');
+        return { active: true, analysis };
+    }
+
+    async function savePreferences(preferences) {
+        const current = getContext();
+        current.extensionSettings.context_helper = { ...current.extensionSettings.context_helper, ...preferences };
+        notify();
+        await native.script.saveSettings();
+        const response = await fetch('/api/settings/get', {
+            method: 'POST', headers: current.getRequestHeaders(), cache: 'no-store', body: '{}',
+        });
+        if (!response.ok) throw new Error('本页设置已更新，但服务器保存未确认；请检查连接后重新打开设置。');
+        const data = await response.json();
+        const stored = typeof data.settings === 'string' ? JSON.parse(data.settings) : data.settings;
+        const saved = stored?.extension_settings?.context_helper ?? {};
+        for (const [name, value] of Object.entries(preferences)) {
+            if (saved[name] !== value) throw new Error('本页设置已更新，但服务器读回不一致；请检查连接后重新保存。');
+        }
     }
 
     function storage(context, assertWritable) {
@@ -251,7 +374,15 @@ export async function createHost() {
         catch { throw new Error('修复已保存，但当前开始了生成、保存或消息编辑；已停止聊天重载，请完成操作后重新分析。'); }
     }
     return {
-        native, inspect, snapshot,
+        native, inspect, snapshot, inspectMonitor,
+        subscribe(callback) {
+            subscribers.add(callback);
+            return () => subscribers.delete(callback);
+        },
+        getMonitorSettings: () => monitorSettings(getContext().extensionSettings.context_helper),
+        async saveMonitorOptions(options) {
+            await savePreferences(monitorSettings(options));
+        },
         async apply(source, plan) {
             const current = getContext();
             const owner = regexOwner(native, current);
@@ -310,21 +441,30 @@ export async function createHost() {
             if (!stored[rule.index] || stored[rule.index].id !== rule.id || Boolean(!stored[rule.index].disabled) !== enabled) {
                 throw new Error('正则开关在本页已更新，但服务器保存未通过校验；请检查连接并重新分析。');
             }
+            notify();
             return { source: change.source, id: rule.id, enabled: !saved.disabled };
         },
         async saveOptions(options) {
             const current = getContext();
             const chatKey = key(current);
             const next = { adapter: options.adapter, normalizeIncoming: Boolean(options.normalizeIncoming) };
+            const before = current.chatMetadata.context_helper;
+            const beforeState = JSON.stringify(before);
             const chatChanged = current.chatId && current.chatMetadata
-                && JSON.stringify(next) !== JSON.stringify(current.chatMetadata.context_helper);
+                && (next.adapter !== (before?.adapter ?? current.extensionSettings.context_helper?.adapter ?? 'auto')
+                    || next.normalizeIncoming !== Boolean(before?.normalizeIncoming));
             if (chatChanged) assertIdle(native, current);
-            current.extensionSettings.context_helper = {
+            await savePreferences({
                 connectionId: options.connectionId, model: options.model, maxTokens: options.maxTokens,
                 prompt: options.prompt, adapter: options.adapter,
-            };
-            current.saveSettingsDebounced();
+                ...monitorSettings(options),
+            });
             if (chatChanged) {
+                if (key(getContext()) !== chatKey) throw new Error('聊天已切换，请重新核对当前聊天的自动处理设置。');
+                if (JSON.stringify(current.chatMetadata.context_helper) !== beforeState) {
+                    throw new Error('聊天的自动处理设置在保存期间改变，请重新分析后再设置。');
+                }
+                assertIdle(native, current);
                 current.chatMetadata.context_helper = next;
                 await current.saveChat();
                 if (key(getContext()) !== chatKey) throw new Error('聊天已切换，请重新核对当前聊天的自动处理设置。');
@@ -334,6 +474,7 @@ export async function createHost() {
                     throw new Error('本页自动处理设置已更新，但服务器保存未确认；请检查连接并重新分析。');
                 }
             }
+            notify();
         },
         hasBackup: () => canUndoRepair(getContext()),
     };

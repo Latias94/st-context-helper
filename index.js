@@ -3,8 +3,27 @@ import { createContextHelperView } from './src/ui.js';
 import { buildLocalPlan, buildRepairMessages, DEFAULT_REPAIR_PROMPT, parseRepairResponse } from './src/repair.js';
 import { repairOutcome } from './src/diagnostics.js';
 import { getRepairConnections, getRepairModels, refreshRepairModels, requestContextRepair } from './src/api.js';
+import { createMonitorController } from './src/monitor.js';
+import { createFloatingMonitor } from './src/floating.js';
 
-let hostPromise, dialogOpen = false;
+let hostPromise, dialogOpen = false, activeView;
+
+async function initializeHost() {
+    const host = await createHost();
+    const floating = createFloatingMonitor({
+        onOpen: tab => openContextHelper({ tab }),
+        onHide: async () => {
+            try { await host.saveMonitorOptions({ ...host.getMonitorSettings(), showMonitor: false }); }
+            catch (error) { globalThis.toastr?.error(error.message, 'Context Helper'); }
+        },
+        onRefresh: () => monitor.refresh(),
+    });
+    const monitor = createMonitorController({
+        readSettings: host.getMonitorSettings, read: host.inspectMonitor, subscribe: host.subscribe,
+        render: floating.update,
+    });
+    return host;
+}
 
 function exportReport(report) {
     if (!report) return;
@@ -16,19 +35,26 @@ function exportReport(report) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export async function openContextHelper() {
-    if (dialogOpen) return;
+export async function openContextHelper({ tab = 'inspector' } = {}) {
+    if (dialogOpen) { activeView?.selectTab(tab, true); return; }
     dialogOpen = true;
     let controller, view;
     try {
-        let host = await (hostPromise ??= createHost());
-        if (!host) host = await (hostPromise = createHost());
+        let host = await (hostPromise ??= initializeHost());
+        if (!host) host = await (hostPromise = initializeHost());
         const context = getContext(), preferences = context.extensionSettings.context_helper ?? {};
         const options = { start: Math.max(0, context.chat.length - 12), end: context.chat.length - 1,
             adapter: 'auto', connectionId: 'current', model: '', maxTokens: 8192, prompt: DEFAULT_REPAIR_PROMPT,
-            ...preferences, ...context.chatMetadata.context_helper };
+            ...preferences, ...context.chatMetadata.context_helper, ...host.getMonitorSettings() };
         let current, pending;
         const inspect = async () => {
+            const context = getContext();
+            if (!context.chatId || !context.chat.length) {
+                current = pending = null;
+                view.showAnalysis(null);
+                view.setStatus('请先打开已保存的聊天以分析上下文；现在仍可配置浮窗和其他全局设置。');
+                return null;
+            }
             current = await host.inspect(view.getOptions());
             pending = null;
             view.showAnalysis(current.analysis);
@@ -44,7 +70,7 @@ export async function openContextHelper() {
         };
         view = createContextHelperView({
             options,
-            onInspect: run(async () => { await inspect(); view.setStatus('分析完成。发送预处理模拟与捕获的提示词会分别标注。'); }),
+            onInspect: run(async () => { if (await inspect()) view.setStatus('分析完成。发送预处理模拟与捕获的提示词会分别标注。'); }),
             onNormalize: run(async () => {
                 await inspect();
                 pending = buildLocalPlan(current.snapshot, view.getOptions());
@@ -89,30 +115,36 @@ export async function openContextHelper() {
                 try {
                     await host.saveOptions(value);
                     await inspect();
-                    return { analysis: current.analysis };
+                    return { analysis: current?.analysis };
                 } catch (error) {
-                    try { await inspect(); error.analysis = current.analysis; } catch { /* Preserve the settings error. */ }
+                    error.monitorSettings = host.getMonitorSettings();
+                    try { await inspect(); error.analysis = current?.analysis; } catch { /* Preserve the settings error. */ }
                     throw error;
                 }
             },
             onModels: async (id, refresh, signal) => refresh ? refreshRepairModels(id, signal) : getRepairModels(id),
             onCancel: () => controller?.abort(),
         });
+        activeView = view;
+        view.selectTab(tab);
         const { Popup, POPUP_TYPE } = host.native.popup;
         const popup = new Popup(view.element, POPUP_TYPE.TEXT, '', {
             wide: true, large: true, allowVerticalScrolling: true, okButton: '关闭',
             onClose: () => { controller?.abort(); view.dispose?.(); },
         });
         const shown = popup.show();
-        await inspect();
-        try { view.setConnections(await getRepairConnections()); }
-        catch (error) { view.setStatus(`本地分析可用；API 配置读取失败：${error.message}`, true); }
+        await run(async () => {
+            await inspect();
+            try { view.setConnections(await getRepairConnections()); }
+            catch (error) { view.setStatus(`本地分析可用；API 配置读取失败：${error.message}`, true); }
+        })();
         await shown;
     } catch (error) {
         globalThis.toastr?.error(error.message, 'Context Helper');
     } finally {
         controller?.abort();
         view?.dispose?.();
+        activeView = null;
         dialogOpen = false;
     }
 }
@@ -128,7 +160,7 @@ function installButton() {
     button.type = 'button';
     button.className = 'menu_button menu_button_icon';
     button.innerHTML = '<i class="fa-solid fa-magnifying-glass-chart"></i><span>上下文助手</span>';
-    button.addEventListener('click', openContextHelper);
+    button.addEventListener('click', () => openContextHelper());
     const note = document.createElement('small');
     note.textContent = '查看发送上下文、诊断标签和记忆、预览并修复会话。';
     panel.append(button, note);
@@ -140,7 +172,7 @@ if (globalThis.SillyTavern?.getContext) {
     const context = getContext();
     if (context.eventTypes.APP_READY) context.eventSource.on(context.eventTypes.APP_READY, installButton);
     // Capture the next native request even if the inspector has never been opened.
-    hostPromise = createHost().catch(error => {
+    hostPromise = initializeHost().catch(error => {
         console.warn('[Context Helper] Initialization failed:', error.message);
         hostPromise = null;
         return null;
