@@ -139,9 +139,22 @@ multiple source-mutating extensions.
 
 ## Preset-specific boundaries
 
-Izumi uses one `konatan_planning~` reasoning block. Cat God uses `think_nya~`.
-Both adapters recognize legacy `thinking` / `think` wrappers and preserve their
-respective narrative and update blocks.
+Izumi uses one `konatan_planning~` reasoning block and accepts legacy
+`thinking` / `think` wrappers. Cat God / Meowssiah covers both the 1.6 and
+`Meowssiah_1.9.12` formats. Detection accepts the family names,
+native `think_nya` / `report_nya` tag markers with or without `~`, and the
+`<<<|catgodml|` format marker in enabled prompt content. Disabled or unselected
+prompts and prompt names alone do not identify the family.
+
+Cat God defaults to `think_nya~`. When enabled prompts declare `<think_nya>`
+without a competing `<think_nya~>` declaration, normalization and AI repair use
+the modern `think_nya` preference. Both native `report_nya` variants and legacy
+`thinking` / `think` wrappers are accepted as reasoning. `<game>` narrative,
+`<summary>`, `<comment>`, `<options><option>...</option></options>`, and variable
+update payloads remain outside reasoning. Footer payloads are protected during
+AI delimiter repair. This adapter does not execute SPreset tool bindings or its
+request/output transformations; request captures retain their documented event
+stage limits.
 
 Kunlun is detected by the case-insensitive `kunlun` marker in a preset name or
 enabled prompt content; `昆仑` also identifies a preset name. It can be selected
