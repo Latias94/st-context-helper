@@ -101,7 +101,10 @@ tool configuration, and new messages can change the applicable depth.
 1. Select a message range and inspect it.
 2. Generate a local repair preview, or select a chat-completion connection and
    request an AI repair preview.
-3. Review the complete before/after sources and reasons.
+3. Review the highlighted diff and reasons. Deletions are red and struck through;
+   additions are green and underlined, including single-character tag changes.
+   Long unchanged sections are collapsed and can be expanded individually or
+   together. Complete before/after sources remain available below each diff.
 4. Apply the preview. The extension checks both in-memory and existing server
    state, saves a one-step undo backup, and verifies the saved chat by reading it
    back from the server. It checks affected fields again after native chat reload.
@@ -115,6 +118,12 @@ snapshot. Already-applied deltas are not replayed. Ambiguous recovery is reporte
 for review. Local table cleanup removes exact duplicates; a familiar table name
 alone never justifies deleting distinct rows. Missing historical cells or hash
 references make a table inspection-only.
+
+Message, variable, and table previews share the same diff viewer. Structured
+values are formatted as JSON. Diff computation uses SillyTavern's existing
+DiffMatchPatch library and preserves grapheme boundaries for emoji and combining
+characters. Each change is computed when opened; very large inputs use a clearly
+marked whole-content replacement. Display choices never change the repair plan.
 
 AI output is data, never executed JavaScript. The accepted JSON format restricts
 edits to the selected message IDs/swipes, existing MVU state, and known tables.

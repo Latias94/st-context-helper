@@ -2,6 +2,7 @@ import { diagnosisSummary, presentIssue } from './diagnostics.js';
 import { regexDepthLabel, regexSourceName } from './regex.js';
 import { monitorSettings } from './monitor.js';
 import { renderTokenUsage } from './token-view.js';
+import { createDiffView } from './diff-view.js';
 
 let viewSequence = 0;
 
@@ -330,9 +331,12 @@ export function createContextHelperView(config = {}) {
                 details.open = changes.length === 1;
                 const type = { message: '消息', variables: 'MVU 变量', table: '表格' }[change.type] || '数据';
                 const target = change.id != null ? ` #${change.id}` : change.uid != null ? ` · ${change.uid}` : '';
+                const diff = createDiffView(change.before, change.after, comparison);
                 details.append(node('summary', '', `${index + 1}. ${type}${target}`), node('p', 'ch-change-reason', text(change.reason)),
-                    comparison(change.before, change.after));
+                    diff.element);
+                details.addEventListener('toggle', () => { if (details.open) void diff.render(); });
                 container.append(details);
+                if (details.open) void diff.render();
             });
             if (asArray(plan.issues).length) {
                 const notes = node('div', 'ch-issues');

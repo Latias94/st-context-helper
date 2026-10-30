@@ -570,6 +570,111 @@
     border-top: 2px solid color-mix(in srgb, var(--ch-success) 55%, transparent);
 }
 
+.context-helper .ch-diff {
+    min-width: 0;
+    margin-top: 12px;
+}
+
+.context-helper .ch-diff-heading,
+.context-helper .ch-diff-legend {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+}
+
+.context-helper .ch-diff-heading {
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+
+.context-helper .ch-diff-legend {
+    font-size: .78em;
+    font-variant-numeric: tabular-nums;
+}
+
+.context-helper .ch-diff-removed {
+    border-bottom: 2px solid var(--ch-error);
+}
+
+.context-helper .ch-diff-added {
+    border-bottom: 2px solid var(--ch-success);
+}
+
+.context-helper .ch-diff-content {
+    max-height: 520px;
+    margin: 10px 0;
+    padding: 13px;
+    overflow: auto;
+    overscroll-behavior: contain;
+    border: 1px solid var(--ch-line);
+    border-radius: 6px;
+    background: var(--ch-surface);
+    color: var(--ch-text);
+    font: .82em / 1.85 ui-monospace, SFMono-Regular, Consolas, monospace;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    tab-size: 4;
+    text-shadow: none;
+    user-select: text;
+}
+
+.context-helper .ch-diff-delete,
+.context-helper .ch-diff-insert {
+    padding: 1px 0;
+    border-radius: 2px;
+    color: inherit;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+}
+
+.context-helper .ch-diff-content:focus-visible {
+    outline: 2px solid var(--ch-accent);
+    outline-offset: 3px;
+}
+
+.context-helper .ch-diff-whitespace::before {
+    content: attr(data-whitespace);
+    font-size: .8em;
+    opacity: .8;
+}
+
+.context-helper .ch-diff-delete {
+    background: color-mix(in srgb, var(--ch-error) 25%, transparent);
+    text-decoration: line-through;
+    text-decoration-color: var(--ch-error);
+}
+
+.context-helper .ch-diff-insert {
+    background: color-mix(in srgb, var(--ch-success) 25%, transparent);
+    text-decoration: underline;
+    text-decoration-color: var(--ch-success);
+    text-underline-offset: 3px;
+}
+
+.context-helper .ch-diff-context {
+    margin: 8px -4px;
+    border-block: 1px dashed var(--ch-line);
+    white-space: pre-wrap;
+}
+
+.context-helper .ch-diff-context > summary {
+    padding: 7px 4px;
+    color: var(--ch-muted);
+    font: inherit;
+    white-space: normal;
+    cursor: pointer;
+}
+
+.context-helper .ch-diff-originals {
+    margin-top: 10px;
+}
+
+.context-helper .ch-diff-originals > .ch-comparison {
+    margin-top: 12px;
+}
+
 .context-helper .ch-trace-row {
     display: grid;
     grid-template-columns: 1fr auto;

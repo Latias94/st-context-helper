@@ -7,7 +7,7 @@
   "description": "Inspect and repair SillyTavern conversation context.",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "check": "node --check index.js && node --check src/host.js && node --check src/ui.js && node --check src/floating.js && node --check src/monitor.js && node --check src/tokens.js && node --check src/token-view.js"
+    "check": "node --check index.js && node --check src/host.js && node --check src/ui.js && node --check src/diff.js && node --check src/diff-view.js && node --check src/floating.js && node --check src/monitor.js && node --check src/tokens.js && node --check src/token-view.js"
   },
   "engines": {
     "node": ">=20"
