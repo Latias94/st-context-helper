@@ -146,9 +146,12 @@ native `think_nya` / `report_nya` tag markers with or without `~`, and the
 `<<<|catgodml|` format marker in enabled prompt content. Disabled or unselected
 prompts and prompt names alone do not identify the family.
 
-Cat God defaults to `think_nya~`. When enabled prompts declare `<think_nya>`
-without a competing `<think_nya~>` declaration, normalization and AI repair use
-the modern `think_nya` preference. Both native `report_nya` variants and legacy
+Cat God normalization and AI repair use `think_nya~`, which both supported
+versions accept. The 1.9.12 display rule accepts closing tags without `~`, but
+its lookahead barrier only recognizes tags with `~`. With separate planning
+blocks before and after a story, unmarked boundaries let that rule escape the
+real `<game>` tags into visible text. Canonical `~` boundaries prevent this
+cross-block match. Both native `think_nya` / `report_nya` variants and legacy
 `thinking` / `think` wrappers are accepted as reasoning. `<game>` narrative,
 `<summary>`, `<comment>`, `<options><option>...</option></options>`, and variable
 update payloads remain outside reasoning. Footer payloads are protected during

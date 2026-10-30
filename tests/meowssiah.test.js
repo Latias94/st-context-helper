@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveAdapter } from '../src/adapters.js';
 import { analyzeSnapshot, traceRegexMessage } from '../src/analysis.js';
-import { buildRepairMessages, parseRepairResponse } from '../src/repair.js';
+import { buildLocalPlan, buildRepairMessages, parseRepairResponse } from '../src/repair.js';
 import { extractNarrative, extractPatches, inspectTags, normalizeMessage } from '../src/tags.js';
 
 // Neutral protocol fixtures for Meowssiah 1.9.12; no reference preset is required.
@@ -35,8 +35,8 @@ test('Meowssiah names and enabled native markers select the existing Cat God fam
         assert.equal(resolveAdapter({ presetName: 'Local format',
             preset: { prompts: [{ identifier: 'format', content }] } }).id, 'cat-god');
     }
-    assert.equal(resolveAdapter({ presetName: 'Local format', preset }).reasoningTag, 'think_nya');
-    assert.equal(resolveAdapter({ presetName: 'Izumi', preset, adapter: 'cat-god' }).reasoningTag, 'think_nya');
+    assert.equal(resolveAdapter({ presetName: 'Local format', preset }).reasoningTag, 'think_nya~');
+    assert.equal(resolveAdapter({ presetName: 'Izumi', preset, adapter: 'cat-god' }).reasoningTag, 'think_nya~');
 });
 
 test('inactive Cat God markers cannot change detection or the legacy reasoning preference', () => {
@@ -59,7 +59,7 @@ for (const tag of ['think_nya', 'think_nya~', 'report_nya', 'report_nya~']) {
             + `<!-- </${tag}> <game>Comment example.</game> -->\n</${tag}>`
             + `<game>${story}</game>${updates}${footer}`;
         const normalized = normalizeMessage(source, profile).text;
-        assert.ok(normalized.startsWith('<think_nya>'));
+        assert.ok(normalized.startsWith('<think_nya~>'));
         assert.equal(extractNarrative(normalized, profile), story);
         assert.ok(normalized.includes('&lt;example&gt;'));
         assert.equal(extractPatches(normalized, profile)[0].value, 'observatory');
@@ -75,7 +75,7 @@ test('unclosed modern reasoning requires a real body boundary and preserves foot
     const source = `<think_nya>Plan.\n<game>${story}</game>${footer}`;
     const normalized = normalizeMessage(source, profile).text;
     assert.equal(extractNarrative(normalized, profile), story);
-    assert.ok(normalized.includes('</think_nya><game>'));
+    assert.ok(normalized.includes('</think_nya~><game>'));
     assert.ok(normalized.endsWith(footer));
     const ambiguous = `<report_nya>Plan and unframed story.\n${footer}`;
     assert.equal(normalizeMessage(ambiguous, profile).text, ambiguous);
@@ -119,19 +119,38 @@ test('native depth rules hide planning and options and retain old summaries with
     }
 });
 
-test('AI repair receives the modern format and cannot rewrite Cat God footer payloads', () => {
+test('AI repair receives the display-compatible format and cannot rewrite Cat God footer payloads', () => {
     const source = snapshot(`<think_nya>\nPlan.\n</think_nya><game>${story}</game>${footer}`);
     const before = structuredClone(source);
     const input = JSON.parse(buildRepairMessages(source).at(-1).content);
     assert.equal(input.adapter.id, 'cat-god');
-    assert.equal(input.adapter.reasoningTag, 'think_nya');
+    assert.equal(input.adapter.reasoningTag, 'think_nya~');
     assert.equal(input.floors[0].narrative, story);
     const propose = text => JSON.stringify({ version: 1, messages: [{ id: 0, swipeId: 0, text }] });
-    assert.equal(parseRepairResponse(propose(source.chat[0].mes), source).messages[0].text, source.chat[0].mes);
+    assert.equal(parseRepairResponse(propose(source.chat[0].mes), source).messages[0].text,
+        `<think_nya~>\nPlan.\n</think_nya~><game>${story}</game>${footer}`);
     for (const [original, replacement] of [[summary, 'The chart is missing.'],
         ['Check the record.', 'Discard the record.'], ['Inspect the chart.', 'Burn the chart.']]) {
         assert.throws(() => parseRepairResponse(propose(source.chat[0].mes.replace(original, replacement)), source),
             /preserv|payload|narrative/i);
     }
     assert.deepEqual(source, before);
+});
+
+test('native display escaping cannot expose game tags between separate reasoning blocks', () => {
+    // Meowssiah 1.9.12 accepts both variants at its ends, but its lookahead barrier requires ~.
+    const displayRegex = /<(?<tag>(?!\/?(?:think_nya|report_nya)~?>)[^<>]+)>(?=(?:(?!<\/?(?:think_nya|report_nya)~>)[\s\S])*<\/(?:think_nya|report_nya)~?>)/g;
+    const replacement = '&lt;&#8203;$<tag>&gt;';
+    const source = '<think_nya>\nUse `<game>` as a literal example.\n</think_nya>\n'
+        + `<game>${story}</game>\n<think_nya>\nCheck the table.\n</think_nya>${updates}${footer}`;
+    assert.ok(source.replace(displayRegex, replacement).includes(`&lt;&#8203;game&gt;${story}&lt;&#8203;/game&gt;`));
+    const profile = resolveAdapter({ presetName: 'Meowssiah_1.9.12', preset });
+    const fixed = buildLocalPlan(snapshot(source)).messages[0].text;
+    const display = fixed.replace(displayRegex, replacement);
+    assert.ok(display.includes(`<game>${story}</game>`));
+    assert.ok(!/&lt;&#8203;\/?game&gt;/.test(display));
+    assert.equal(extractNarrative(fixed, profile), story);
+    assert.ok(fixed.includes(updates));
+    assert.ok(fixed.endsWith(footer));
+    assert.equal(buildLocalPlan(snapshot(fixed)).messages.length, 0);
 });
