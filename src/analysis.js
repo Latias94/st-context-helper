@@ -3,6 +3,7 @@ import { activeData } from './repair.js';
 import { extractPatches, inspectTags, narrativeSegments } from './tags.js';
 import { missingProtocolIssues } from './protocols.js';
 import { isDepthSummaryRule, isDepthTrimRule, isLiteralWordFilter, retainsNarrative } from './regex.js';
+import { describeConsumerRules, inspectConsumerBoundaries } from './consumers.js';
 
 export function traceRegexMessage(text, placement, depth, scripts, runRegex,
     { narrative = '', segments = [narrative], summaryTags = [], reasoningTags = [], bodyTags = [] } = {}) {
@@ -50,9 +51,12 @@ export function traceRegexMessage(text, placement, depth, scripts, runRegex,
 export function analyzeSnapshot(snapshot, { traceMessage, promptCapture, adapter = 'auto', canUseTools = false } = {}) {
     const profile = resolveAdapter({ ...snapshot, adapter });
     const issues = [...snapshot.cardProtocol?.warnings ?? []], messages = [];
+    const contracts = describeConsumerRules(snapshot.regex);
     const included = row => !row.is_system || (canUseTools && Array.isArray(row.extra?.tool_invocations));
     const history = snapshot.chat.map((row, id) => ({ row, id })).filter(({ row }) => included(row));
     const depths = new Map(history.map(({ id }, index) => [id, history.length - index - 1]));
+    const displayed = snapshot.chat.map((row, id) => ({ row, id })).filter(({ row }) => !row.is_system);
+    const displayDepths = new Map(displayed.map(({ id }, index) => [id, displayed.length - index - 1]));
     let rawCharacters = 0, promptCharacters = 0;
     for (let id = snapshot.start; id <= snapshot.end; id++) {
         const row = snapshot.chat[id], raw = row.mes ?? '';
@@ -66,6 +70,9 @@ export function analyzeSnapshot(snapshot, { traceMessage, promptCapture, adapter
         const inspected = inspectTags(raw, profile);
         const rowIssues = inspected.issues.filter(issue => issue.code !== 'unescaped-protocol-example'
             || (!row.is_user && !row.is_system)).map(issue => ({ ...issue, messageId: id }));
+        if (!row.is_user && !row.is_system) rowIssues.push(...inspectConsumerBoundaries(raw, profile, inspected,
+            { contracts, depth: displayDepths.get(id), placement: row.extra?.type === 'narrator' ? 3 : 2 })
+            .map(issue => ({ ...issue, messageId: id })));
         if (!row.is_user && !row.is_system && id > 0) rowIssues.push(
             ...missingProtocolIssues(raw, inspected, snapshot.cardProtocol).map(issue => ({ ...issue, messageId: id })));
         const lost = !row.is_system && narrative.length >= 30 && !retainsNarrative(result.text, result.expectedNarrative ?? segments);

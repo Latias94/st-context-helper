@@ -191,8 +191,10 @@ export function inspectTags(text, profile) {
     // Raw-message consumers can match examples even when this scanner correctly skips
     // their quotes, code fences, comments, or CDATA. Display regex escaping is not enough.
     for (const block of blocks.filter(block => block.kind === 'reasoning' && !block.nested)) {
-        const examples = [...text.slice(block.bodyStart, block.bodyEnd).matchAll(/<\/?([A-Za-z][\w~.-]*)\s*>/g)]
-            .filter(match => dataTags.has(match[1].toLowerCase()) || bodies.has(match[1].toLowerCase()));
+        const examples = [...text.slice(block.bodyStart, block.bodyEnd).matchAll(/<\/?([A-Za-z][\w~.-]*)\s*\/?>/g)]
+            .filter(match => dataTags.has(match[1].toLowerCase()) || bodies.has(match[1].toLowerCase())
+                || match[1].toLowerCase() === 'statusplaceholderimpl'
+                || (match[1].toLowerCase() === 'option' && profile.adviceTags?.includes('options')));
         const tags = [...new Set(examples.map(match => match[1]))];
         if (tags.length) issues.push({ code: 'unescaped-protocol-example', severity: 'warning',
             title: 'Reasoning examples can be mistaken for real output blocks', tags,
@@ -219,17 +221,26 @@ export function normalizeMessage(text, profile) {
     const ranges = inspected.blocks.filter(block => block.kind === 'reasoning' && (block.closed || block.recoverable));
     const outer = ranges.filter(block => !ranges.some(other => other !== block
         && other.start < block.start && other.end >= block.end));
-    let output = text;
-    for (const block of outer.toReversed()) {
+    const groups = [];
+    for (const block of outer) {
+        const last = groups.at(-1);
+        if (last && profile.reasoningLayout === 'single-leading' && /^\s*$/.test(text.slice(last.at(-1).end, block.start))) last.push(block);
+        else groups.push([block]);
+    }
+    const normalizeBody = block => {
         let body = text.slice(block.bodyStart, block.bodyEnd);
         for (const token of inspected.structural.filter(token => token.kind === 'reasoning'
             && token.start >= block.bodyStart && token.end <= block.bodyEnd).toReversed()) {
             body = body.slice(0, token.start - block.bodyStart) + body.slice(token.end - block.bodyStart);
         }
         // Quoted protocol examples must remain inert to MVU and downstream regex scripts.
-        body = body.replaceAll('<', '&lt;').replaceAll('>', '&gt;').trim();
+        return body.replaceAll('<', '&lt;').replaceAll('>', '&gt;').trim();
+    };
+    let output = text;
+    for (const group of groups.toReversed()) {
+        const body = group.map(normalizeBody).filter(Boolean).join('\n\n');
         const replacement = `<${profile.reasoningTag}>\n${body}\n</${profile.reasoningTag}>`;
-        output = output.slice(0, block.start) + replacement + output.slice(block.end);
+        output = output.slice(0, group[0].start) + replacement + output.slice(group.at(-1).end);
     }
     return { text: output, issues: inspected.issues, changed: output !== text };
 }

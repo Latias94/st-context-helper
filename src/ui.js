@@ -708,9 +708,10 @@ export function createContextHelperView(config = {}) {
         if (regex?.enabled === false) return { label: '正则总开关关闭 · 当前不生效', className: 'inactive' };
         if (rule.disabled === true || rule.enabled === false) return { label: '规则已关闭 · 当前不生效', className: 'inactive' };
         if (rule.allowed === false) return { label: '未获允许 · 当前不生效', className: 'inactive' };
-        if (!rule.promptOnly) return { label: '显示 / 其他位置规则 · 不处理提示词', className: 'inactive' };
-        if (rule.activeForPrompt === false) return { label: rule.status || '提示词未激活 · 当前不生效', className: 'inactive' };
-        if (rule.activeForPrompt === true) return { label: rule.status || '当前提示词有效', className: 'active' };
+        const prompt = rule.activeForPrompt ?? Boolean(rule.promptOnly);
+        const display = rule.activeForMarkdown ?? Boolean(rule.markdownOnly);
+        if (prompt || display) return { label: prompt && display ? '显示与提示词处理已启用'
+            : display ? '显示处理已启用 · 不处理提示词' : '提示词处理已启用 · 不用于显示', className: 'active' };
         return { label: rule.status || '已配置 · 实际作用需结合宿主策略', className: 'conditional' };
     }
 
@@ -805,7 +806,7 @@ export function createContextHelperView(config = {}) {
             const summary = node('summary', 'ch-regex-summary');
             const main = node('span', 'ch-regex-main');
             const title = node('strong', '', rule.name || key || '未命名规则');
-            const meta = node('small', 'ch-help', `${ruleSource(rule)} · ${rule.promptOnly ? '提示词' : '非提示词'} · ${rule.depthLabel || regexDepthLabel(rule)} · 修改楼层 ${ruleFloors(rule)}`);
+            const meta = node('small', 'ch-help', `${ruleSource(rule)} · ${rule.promptOnly ? '提示词' : '非提示词'} · ${rule.depthLabel || regexDepthLabel(rule)} · 提示词变更楼层 ${ruleFloors(rule)}`);
             main.append(title, meta);
             const status = node('span', `ch-regex-activity ch-regex-${activity.className}`, activity.label);
             const toggle = node('input', 'ch-regex-toggle');
@@ -824,7 +825,7 @@ export function createContextHelperView(config = {}) {
                 `类型：${rule.scriptType ?? '未标注'}`,
                 `配置开关：${ruleEnabled(rule) ? '开启' : '关闭'}`,
                 `深度：${rule.depthLabel || regexDepthLabel(rule)}（0 为最新）`,
-                `位置：${asArray(rule.placement).map(position => ({ 1: '用户', 2: '助手', 5: '世界书', 6: '独立推理' })[position] || String(position)).join('、') || '未标注'}`,
+                `位置：${asArray(rule.placement).map(position => ({ 1: '用户', 2: '助手', 3: '旁白 / 命令', 5: '世界书', 6: '独立推理' })[position] || String(position)).join('、') || '未标注'}`,
                 `允许：${rule.allowed === false ? '否' : rule.allowed === true ? '是' : '未标注'}`,
                 `提示词处理：${rule.promptOnly ? '是' : '否'} · Markdown 显示处理：${rule.markdownOnly ? '是' : '否'}`,
                 `当前状态：${rule.status || activity.label}`,
@@ -839,13 +840,14 @@ export function createContextHelperView(config = {}) {
             patterns.append(findCode, replaceCode);
             body.append(patterns);
             const policy = [];
+            policy.push('此开关控制整条酒馆原生规则，会同时影响它的显示与发送用途。');
             if (rule.trimStrings) policy.push(`trimStrings：${excerpt(rule.trimStrings, 400)}`);
             policy.push(rule.source === 'global' ? '修改全局规则会影响所有聊天。'
                 : rule.source === 'preset' ? '修改预设规则会影响使用该预设的聊天。'
                     : rule.source === 'character' ? '修改角色卡规则会影响使用该角色卡的聊天。' : '规则作用范围未确认，请核对来源。');
             if (rule.allowed === false) policy.push('该规则未获允许，切换配置仍不会使它当前生效。');
             if (rule.disabled === true || rule.enabled === false) policy.push('该规则配置为关闭。');
-            if (regex.enabled === false) policy.push('正则总开关关闭，所有规则当前都不参与提示词。');
+            if (regex.enabled === false) policy.push('正则总开关关闭，所有规则当前都不参与显示和提示词处理。');
             if (policy.length) body.append(node('p', 'ch-regex-policy', policy.join(' ')));
             details.append(body);
             container.append(details);

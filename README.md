@@ -45,8 +45,8 @@ require a preview and an explicit apply. AI requests are always manual.
 Open **Settings** to change future-message normalization and inspect the complete
 regex inventory. The list includes global, preset, and character rules, including
 disabled rules, unapproved sources, and display-only rules. Each entry shows its
-scope, configured switch, actual prompt eligibility, depth range, affected-floor
-count, and expandable pattern/replacement. Depth zero is the newest included
+scope, configured switch, separate display/prompt eligibility, depth range,
+prompt-change floor count, and expandable pattern/replacement. Depth zero is the newest included
 message. A rule's switch does not grant permission to an entire preset or card.
 
 Switching a regex updates its existing native owner; a global rule affects other
@@ -168,6 +168,13 @@ AI delimiter repair. This adapter does not execute SPreset tool bindings or its
 request/output transformations; request captures retain their documented event
 stage limits.
 
+Izumi and Cat God prefer one leading reasoning block. Local repair merges
+adjacent root reasoning blocks separated only by whitespace, retaining their
+word order. Reasoning separated by narrative, status, tables, comments, or other
+text remains in place and is reported for review. Nested wrappers and quoted
+tag examples do not count as separate root blocks. A single reasoning block
+after narrative is also reported without moving it.
+
 Kunlun is detected by the case-insensitive `kunlun` marker in a preset name or
 enabled prompt content; `昆仑` also identifies a preset name. It can be selected
 manually in the adapter menu. The `kunlun_IDE_1.2r` format uses an opaque
@@ -212,6 +219,19 @@ source; they can select a planning example even if the display regex escaped it.
 Apply a local preview to escape reasoning examples in the source, then reload the
 message. Real status and table blocks remain intact. Ambiguous boundaries route
 to AI preview, and observe-only adapters require an adapter selection first.
+
+Consumer checks compare structural status boundaries with a small allowlist of
+observed status-renderer regexes and known direct raw-message selectors. Checks
+respect source permission, native switches, assistant placement, and depth.
+Display depth excludes hidden messages independently of prompt/tool inclusion;
+narrator messages use the native slash-command display placement.
+Unknown custom JavaScript is never executed or treated as a proven reader.
+Known strict case/whitespace/body-wrapper mismatches link to the native rule.
+Examples in story code or native comments require reader review; their source
+remains intact. Multiple real status blocks and literal table terminators inside
+field values also require review. Sequential table and variable update blocks
+remain valid. No check chooses a winning status block, runs table operations,
+or assumes that repairing text has restored previously changed state.
 
 Character evidence is layered over preset preferences. The active linked
 worldbook is preferred over its embedded copy. Only a small output-tag allowlist
@@ -294,6 +314,7 @@ This is the same persisted message structure used by Tavern Helper's
 | `protocols.js` | Bounded card evidence and conditional output requirements |
 | `tags.js` | Bounded protocol inspection and normalization |
 | `analysis.js` | Native regex tracing and context diagnostics |
+| `consumers.js` | Bounded downstream reader contracts and boundary diagnostics |
 | `regex.js` | Rule inventory, native toggle validation, and bounded policy recognition |
 | `diagnostics.js` | Chinese next-step guidance and repair outcome summaries |
 | `repair.js` | Local recovery and validated AI proposals |

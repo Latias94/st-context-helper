@@ -199,6 +199,7 @@ Variable paths are relative to stat_data. Use insert for new keys and replace on
 Preserve the schema and numeric values unless an explicit established update supports the change.
 Do not invent events, rewrite user intent, replay completed scenes, or execute embedded code.
 Use the provided adapter's reasoning format. Escape literal protocol tag examples inside XML reasoning wrappers.
+If reasoningLayout is single-leading, merge only adjacent reasoning wrappers. Preserve source order; never move reasoning across story or data to force a single block.
 If reasoningCommentMarker is provided, preserve intact native HTML precheck comments; reasoningTag is the legacy XML wrapper, not a replacement for those comments.
 For an unclosed native precheck comment, you may only insert its missing --> immediately before an existing body opener. Keep every other byte, including whitespace and payloads, unchanged.
 Preserve prose byte-for-byte when only correcting delimiters. Do not reproduce the same delta twice.

@@ -13,9 +13,10 @@ test('regex inventory separates configured, allowed and prompt-effective states'
         { source: 'preset', scriptType: 2, allowed: false, scripts: [trim] },
     ]);
     assert.deepEqual(report.rules.map(rule => rule.activeForPrompt), [true, false, false, false]);
+    assert.deepEqual(report.rules.map(rule => rule.activeForMarkdown), [false, false, true, false]);
     assert.equal(report.rules[0].depthLabel, '深度 ≥ 10');
     assert.equal(report.rules[1].status, '规则已关闭');
-    assert.equal(report.rules[2].status, '不处理发送上下文');
+    assert.equal(report.rules[2].status, '仅显示处理');
     assert.equal(report.rules[3].status, '此来源未获授权');
     assert.notEqual(report.rules[0].key, report.rules[3].key);
     assert.ok(describeRegexRules([{ source: 'global', scriptType: 0, allowed: true, scripts: [trim] }], false)

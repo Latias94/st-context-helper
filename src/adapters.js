@@ -3,12 +3,14 @@ import { withCardProtocol } from './protocols.js';
 const profiles = {
     izumi: {
         id: 'izumi', label: 'Izumi',
+        reasoningLayout: 'single-leading',
         reasoningTag: 'konatan_planning~', reasoningTags: ['konatan_planning~', 'thinking', 'think'],
         bodyTags: ['content', 'game'], updateTags: ['UpdateVariable', 'IzumiEdit'],
         summaryTags: ['progress', 'summary'], adviceTags: ['advice'],
     },
     'cat-god': {
         id: 'cat-god', label: '小猫之神 / 喵赛亚',
+        reasoningLayout: 'single-leading',
         // Meowssiah 1.9.12's display escape barrier only recognizes ~ boundaries.
         reasoningTag: 'think_nya~', reasoningTags: ['think_nya~', 'think_nya', 'report_nya~', 'report_nya', 'thinking', 'think'],
         bodyTags: ['game', 'content'], updateTags: ['UpdateVariable'], statusTags: ['summary', 'comment', 'options'],

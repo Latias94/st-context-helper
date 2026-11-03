@@ -14,12 +14,15 @@ export function describeRegexRules(groups, enabled = true) {
     return { enabled, rules: groups.flatMap(group => group.scripts.map((rule, index) => {
         const activeForPrompt = enabled && group.allowed && !rule.disabled && Boolean(rule.promptOnly)
             && rule.placement?.some(value => [1, 2].includes(value));
+        const activeForMarkdown = enabled && group.allowed && !rule.disabled && Boolean(rule.markdownOnly)
+            && rule.placement?.some(value => [1, 2, 3, 6].includes(value));
         const status = !enabled ? '正则扩展已关闭' : !group.allowed ? '此来源未获授权'
-            : rule.disabled ? '规则已关闭' : !rule.promptOnly ? '不处理发送上下文'
+            : rule.disabled ? '规则已关闭' : activeForMarkdown ? activeForPrompt ? '显示与提示词处理' : '仅显示处理'
+                : !rule.promptOnly ? '其他处理位置'
                 : !rule.placement?.some(value => [1, 2].includes(value)) ? '仅处理其他位置' : '参与发送处理';
         return { ...structuredClone(rule), key: `${group.source}:${index}:${rule.id ?? ''}`, index,
             name: rule.scriptName || '未命名规则', source: group.source, scriptType: group.scriptType,
-            allowed: group.allowed, activeForPrompt, status, depthLabel: regexDepthLabel(rule),
+            allowed: group.allowed, activeForPrompt, activeForMarkdown, status, depthLabel: regexDepthLabel(rule),
             signature: JSON.stringify(rule) };
     })) };
 }
