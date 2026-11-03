@@ -3,8 +3,18 @@ function tokens(text) {
     const result = [];
     const issues = [];
     const comments = [];
-    let at = 0;
+    let at = 0, lineEnd = -1, markdownLiteral = false, table = false;
     while (at < text.length) {
+        if (at >= lineEnd) {
+            const start = text.lastIndexOf('\n', at - 1) + 1;
+            const next = text.indexOf('\n', at);
+            lineEnd = next < 0 ? text.length : next + 1;
+            const line = text.slice(start, lineEnd).trimEnd();
+            const following = text.slice(lineEnd, text.indexOf('\n', lineEnd) < 0 ? text.length : text.indexOf('\n', lineEnd)).trim();
+            const cells = following.replace(/^\||\|$/g, '').split('|');
+            table = line.includes('|') && (table || (following.includes('|') && cells.every(cell => /^\s*:?-{3,}:?\s*$/.test(cell))));
+            markdownLiteral = /^(?: {4}| {0,3}\t)/.test(line) || table;
+        }
         if (at === 0 || text[at - 1] === '\n') {
             const fence = /^ {0,3}(`{3,}|~{3,})[^\r\n]*(?:\r?\n|$)/.exec(text.slice(at));
             if (fence) {
@@ -49,7 +59,7 @@ function tokens(text) {
             const match = /^<\/?([A-Za-z][\w~.-]*)\s*>/.exec(text.slice(at));
             if (match) {
                 result.push({ tag: match[1], lower: match[1].toLowerCase(), closing: match[0][1] === '/',
-                    start: at, end: at + match[0].length });
+                    start: at, end: at + match[0].length, markdownLiteral });
                 at += match[0].length;
                 continue;
             }
@@ -115,6 +125,9 @@ export function inspectTags(text, profile) {
     };
     for (const token of scanned.tokens) {
         if (opaque) {
+            if (!token.closing && token.lower === opaque.lower) issues.push({ code: 'nested-protocol', severity: 'warning',
+                title: 'Protocol block contains an unquoted nested opener', tag: token.tag,
+                detail: `${token.tag}: nested protocol boundaries are ambiguous. No inner or outer payload was selected.` });
             if (token.closing && token.lower === opaque.lower) {
                 blocks.push({ ...opaque, bodyEnd: token.start, end: token.end, closed: true });
                 structural.push({ ...token, kind: opaque.kind });
@@ -122,6 +135,7 @@ export function inspectTags(text, profile) {
             }
             continue;
         }
+        if (token.markdownLiteral) continue;
         if (reasoning.has(token.lower)) {
             if (!token.closing) {
                 if (stack.length && !boundary(token)) {

@@ -313,6 +313,7 @@ This is the same persisted message structure used by Tavern Helper's
 | `adapters.js` | Preset recognition and protocol preferences |
 | `protocols.js` | Bounded card evidence and conditional output requirements |
 | `tags.js` | Bounded protocol inspection and normalization |
+| `reader.js` | Read-only selection of one unambiguous protocol payload |
 | `analysis.js` | Native regex tracing and context diagnostics |
 | `consumers.js` | Bounded downstream reader contracts and boundary diagnostics |
 | `regex.js` | Rule inventory, native toggle validation, and bounded policy recognition |
@@ -323,6 +324,56 @@ This is the same persisted message structure used by Tavern Helper's
 | `memory.js` | Optional reference-memory cache invalidation before native reload |
 | `api.js` | Native connections and repair requests |
 | `ui.js` | Inspector, diagnosis, repair previews |
+
+## Repair the observed raw-message status reader
+
+Some character cards embed a frontend whose `extractStatusBlock()` takes the
+first regex match from the original message. A quoted `<Status_block>...</Status_block>`
+inside reasoning can therefore be parsed as an empty YAML document. Display-only
+escaping and optional incoming normalization do not fix that reader for existing
+or manually edited messages.
+
+For the observed renderer template, this targeted utility embeds the same bounded
+protocol scanner used by Context Helper into the card's frontend:
+
+```console
+node tools/patch-status-reader.js --sillytavern /path/to/SillyTavern --card /path/to/character.png
+```
+
+For the Xiao Qian V4.5.1 card writer, patch the source templates rather than only
+one generated card. Supply both the writer PNG and its linked worldbook:
+
+```console
+node tools/patch-status-reader.js --sillytavern /path/to/SillyTavern --card /path/to/writer.png --world /path/to/linked-worldbook.json
+```
+
+This updates the two exact named status-template entries in the writer's embedded
+character book, the linked world's `entries`, and its `originalData.entries`.
+The generator already copies these JSON templates into exported cards, so its
+frontend and other authoring instructions remain unchanged. Both display modes
+receive the self-contained safe reader. Existing generated cards are not migrated
+automatically; apply the first command to an existing card when needed.
+
+Close active character editors before running it, then refresh SillyTavern so it
+reloads the card. The utility backs up the original PNG under
+`backups/context-helper/status-reader-<timestamp>/`, patches both `chara` and
+`ccv3` metadata when present, and leaves image chunks and all non-renderer fields
+unchanged. Observed active and disabled renderer variants are both patched, so
+switching display modes does not restore the old reader. Worldbook JSON is also
+backed up when supplied; only the target templates' renderer strings change.
+It changes neither chats nor presets. Unsupported templates are rejected before
+writing; rerunning an already installed patch is a no-op. Both outputs are prepared
+and backed up before replacement. Replacements are individually verified, not a
+cross-file atomic transaction; a failure reports the backup and already saved files
+without overwriting concurrent edits to roll them back.
+
+The patched frontend is self-contained: it needs no installed Context Helper
+extension or global message interception. It reads untouched source, ignores
+reasoning, quoted examples, code, comments, and other opaque protocol payloads,
+and requires a single unambiguous status block. Duplicate or incomplete
+boundaries clear the pending YAML and report an error rather than choosing the
+first or last block. Missing status data remains a loading state; malformed,
+empty, scalar, or array YAML is not accepted as a status object.
 
 Licensed under AGPL-3.0-only, consistent with the host project and derived
 reference integration.
