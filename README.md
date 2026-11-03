@@ -205,6 +205,14 @@ updates outside it. It does not globally impose one preset's preferences on
 another. To support another preset, add a small profile in `src/adapters.js`
 and regression tests for that preset's actual output.
 
+Quoted protocol examples inside reasoning are also diagnosed when their raw tags
+could be consumed by another extension. Some status-bar frontends call
+`getChatMessages()` and select the first `<Status_block>` directly from saved
+source; they can select a planning example even if the display regex escaped it.
+Apply a local preview to escape reasoning examples in the source, then reload the
+message. Real status and table blocks remain intact. Ambiguous boundaries route
+to AI preview, and observe-only adapters require an adapter selection first.
+
 Character evidence is layered over preset preferences. The active linked
 worldbook is preferred over its embedded copy. Only a small output-tag allowlist
 affects parsing: for example, `maintext` and `Status_block` in a generated card

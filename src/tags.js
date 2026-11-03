@@ -188,6 +188,17 @@ export function inspectTags(text, profile) {
             detail: block.recoverable ? 'A protocol boundary is available for normalization.'
                 : 'No safe story boundary. Source retained; provide the missing body marker or request AI repair preview.' });
     }
+    // Raw-message consumers can match examples even when this scanner correctly skips
+    // their quotes, code fences, comments, or CDATA. Display regex escaping is not enough.
+    for (const block of blocks.filter(block => block.kind === 'reasoning' && !block.nested)) {
+        const examples = [...text.slice(block.bodyStart, block.bodyEnd).matchAll(/<\/?([A-Za-z][\w~.-]*)\s*>/g)]
+            .filter(match => dataTags.has(match[1].toLowerCase()) || bodies.has(match[1].toLowerCase()));
+        const tags = [...new Set(examples.map(match => match[1]))];
+        if (tags.length) issues.push({ code: 'unescaped-protocol-example', severity: 'warning',
+            title: 'Reasoning examples can be mistaken for real output blocks', tags,
+            detail: `Raw protocol tags inside reasoning: ${tags.join(', ')}. Raw-message frontends may select these before the real output.`,
+            action: profile.id === 'generic' ? 'settings' : block.closed || block.recoverable ? 'local' : 'ai' });
+    }
     if (opaque) {
         blocks.push({ ...opaque, bodyEnd: text.length, end: text.length, closed: false });
         issues.push({ code: opaque.kind === 'body' ? 'unclosed-body' : 'unclosed-data', severity: 'error',

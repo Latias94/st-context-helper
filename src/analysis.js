@@ -64,7 +64,8 @@ export function analyzeSnapshot(snapshot, { traceMessage, promptCapture, adapter
             { narrative, segments, summaryTags: profile.summaryTags, reasoningTags: profile.reasoningTags, bodyTags: profile.bodyTags })
             ?? { text: raw, trace: [] };
         const inspected = inspectTags(raw, profile);
-        const rowIssues = inspected.issues.map(issue => ({ ...issue, messageId: id }));
+        const rowIssues = inspected.issues.filter(issue => issue.code !== 'unescaped-protocol-example'
+            || (!row.is_user && !row.is_system)).map(issue => ({ ...issue, messageId: id }));
         if (!row.is_user && !row.is_system && id > 0) rowIssues.push(
             ...missingProtocolIssues(raw, inspected, snapshot.cardProtocol).map(issue => ({ ...issue, messageId: id })));
         const lost = !row.is_system && narrative.length >= 30 && !retainsNarrative(result.text, result.expectedNarrative ?? segments);

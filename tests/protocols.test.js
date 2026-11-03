@@ -4,6 +4,8 @@ import { deriveCardProtocol } from '../src/protocols.js';
 import { resolveAdapter } from '../src/adapters.js';
 import { analyzeSnapshot } from '../src/analysis.js';
 import { extractNarrative, inspectTags, normalizeMessage } from '../src/tags.js';
+import { buildLocalPlan } from '../src/repair.js';
+import { presentIssue } from '../src/diagnostics.js';
 
 test('generated-card body framing combines with each preset reasoning preference', () => {
     const cardProtocol = deriveCardProtocol({ name: 'Generated card', fields: {
@@ -76,4 +78,55 @@ test('quoted JSONPatch examples do not satisfy a real nested block requirement',
         chat: [{ mes: 'Greeting.' }, { mes: '<UpdateVariable>{"note":"<JSONPatch>literal"}</UpdateVariable>' }], tables: [] });
     assert.ok(report.issues.some(issue => issue.code === 'missing-required-protocol' && issue.detail.startsWith('JSONPatch')));
     assert.ok(report.issues.some(issue => issue.code === 'invalid-patch'));
+});
+
+test('raw-message status readers cannot distinguish quoted planning examples until source is normalized', () => {
+    const cardProtocol = deriveCardProtocol({ name: 'Status card', fields: {
+        first_mes: '<maintext>STORY</maintext><Status_block>STATUS</Status_block>',
+    } });
+    const readStatus = text => /<Status_block>\s*([\s\S]*?)\s*<\/Status_block>/i.exec(text)?.[1];
+    const profile = resolveAdapter({ presetName: 'Meowssiah_1.9.12', cardProtocol });
+    const status = '<Status_block>REAL_STATUS</Status_block>', table = '<tableEdit>REAL_TABLE</tableEdit>';
+    for (const example of ['Use `<Status_block>EXAMPLE</Status_block>`.',
+        '```xml\n<Status_block>EXAMPLE</Status_block>\n```',
+        '<!-- <Status_block>EXAMPLE</Status_block> -->',
+        '<![CDATA[<Status_block>EXAMPLE</Status_block>]]>']) {
+        const source = `<think>PLAN</think>\n<think_nya>\n${example}\n</think_nya>\n<game>STORY</game>\n${status}\n${table}`;
+        const snapshot = { presetName: 'Meowssiah_1.9.12', cardProtocol, start: 0, end: 0,
+            chat: [{ mes: source }], metadata: {}, tables: [] };
+        assert.equal(readStatus(source), 'EXAMPLE');
+        const report = analyzeSnapshot(snapshot);
+        const issue = report.issues.find(issue => issue.code === 'unescaped-protocol-example');
+        assert.equal(issue?.messageId, 0);
+        assert.deepEqual(issue.tags, ['Status_block']);
+        assert.equal(presentIssue(issue).action, 'local');
+        const plan = buildLocalPlan(snapshot), fixed = plan.messages[0].text;
+        assert.equal(readStatus(fixed), 'REAL_STATUS');
+        assert.ok(fixed.includes(status));
+        assert.ok(fixed.includes(table));
+        assert.equal(extractNarrative(fixed, profile), 'STORY');
+        assert.ok(!inspectTags(fixed, profile).issues.some(issue => issue.code === 'unescaped-protocol-example'));
+        assert.deepEqual(buildLocalPlan({ ...snapshot, chat: [{ mes: fixed }] }).messages, []);
+    }
+});
+
+test('escaped planning examples and real data blocks do not raise the raw-consumer warning', () => {
+    const profile = resolveAdapter({ presetName: 'Meowssiah', cardProtocol: { bodyTags: [], statusTags: ['Status_block'] } });
+    for (const source of [
+        '<think_nya>\nUse &lt;Status_block&gt;EXAMPLE&lt;/Status_block&gt;.\n</think_nya><Status_block>REAL</Status_block>',
+        '<game>STORY</game><Status_block>REAL</Status_block><tableEdit>REAL_TABLE</tableEdit>',
+        '<think_nya>\nAn ordinary <div>HTML example</div>.\n</think_nya><game>STORY</game>',
+    ]) assert.ok(!inspectTags(source, profile).issues.some(issue => issue.code === 'unescaped-protocol-example'));
+});
+
+test('raw-consumer guidance respects ambiguous boundaries, observe-only mode and user messages', () => {
+    const cardProtocol = { bodyTags: [], statusTags: ['Status_block'] };
+    const source = '<thinking>Use `<Status_block>EXAMPLE</Status_block>`.';
+    const profile = resolveAdapter({ presetName: 'Meowssiah', cardProtocol });
+    assert.equal(inspectTags(source, profile).issues.find(issue => issue.code === 'unescaped-protocol-example')?.action, 'ai');
+    const generic = resolveAdapter({ adapter: 'generic', cardProtocol });
+    assert.equal(inspectTags(source, generic).issues.find(issue => issue.code === 'unescaped-protocol-example')?.action, 'settings');
+    const report = analyzeSnapshot({ presetName: 'Meowssiah', cardProtocol, start: 0, end: 0,
+        chat: [{ mes: source + '\n</thinking>', is_user: true }], tables: [] });
+    assert.ok(!report.issues.some(issue => issue.code === 'unescaped-protocol-example'));
 });
